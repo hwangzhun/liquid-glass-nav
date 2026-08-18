@@ -29,15 +29,9 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { CSSProperties, DragEvent as ReactDragEvent, FormEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { CSSProperties, DragEvent as ReactDragEvent, FormEvent, MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import packageJson from "../../../package.json";
 import { toast } from "sonner";
-
-const ASSETS = {
-  logo: "/manus-storage/tidal-mark_85db87ad.png",
-  orbit: "/manus-storage/tidal-orbit_1a385c83.png",
-  ripple: "/manus-storage/tidal-ripple_22a2fb19.png",
-  signal: "/manus-storage/tidal-signal_da0d92a5.png",
-};
 
 type CategoryId = string;
 type SortMode = "curated" | "az";
@@ -333,12 +327,12 @@ function SiteIcon({ site }: { site: Site }) {
   );
 }
 
-function StatChip({ label, value, tone }: { label: string; value: string; tone: string }) {
+function StatChip({ label, value, tone, active, onClick }: { label: string; value: string; tone: string; active: boolean; onClick: () => void }) {
   return (
-    <div className={`stat-chip stat-${tone}`}>
+    <button type="button" className={`stat-chip stat-${tone} ${active ? "stat-chip-active" : ""}`} onClick={onClick} aria-pressed={active}>
       <span>{label}</span>
       <strong>{value}</strong>
-    </div>
+    </button>
   );
 }
 
@@ -357,7 +351,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
   const [sites, setSites] = useState<Site[]>(() => readLocal("tidal-sites", initialSites));
   const [activeCategory, setActiveCategory] = useState<CategoryId>("all");
   const [query, setQuery] = useState("");
-  const [favorites, setFavorites] = useState<string[]>(() => readLocal("tidal-favorites", ["figma", "raycast"]));
+  const [favorites, setFavorites] = useState<string[]>(() => readLocal("tidal-favorites", []));
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -425,6 +419,13 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     window.localStorage.setItem("tidal-favorites", JSON.stringify(favorites));
   }, [favorites]);
+  useEffect(() => {
+    const siteIds = new Set(sites.map((site) => site.id));
+    setFavorites((current) => {
+      const valid = current.filter((id, index) => siteIds.has(id) && current.indexOf(id) === index);
+      return valid.length === current.length ? current : valid;
+    });
+  }, [sites]);
   useEffect(() => {
     window.localStorage.setItem("tidal-skin", JSON.stringify(skin));
   }, [skin]);
@@ -539,8 +540,12 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     siteLayoutAnimationsRef.current = nextAnimations;
   }, [sites]);
 
-  const toggleFavorite = (id: string) => {
-    setFavorites((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  const toggleFavorite = (event: ReactMouseEvent<HTMLButtonElement>, site: Site) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const isFavorite = favorites.includes(site.id);
+    setFavorites((current) => (current.includes(site.id) ? current.filter((item) => item !== site.id) : [...current, site.id]));
+    toast.success(isFavorite ? `已取消收藏“${site.name}”。` : `已收藏“${site.name}”。`);
   };
 
   const withSortOrder = (nextSites: Site[]) => nextSites.map((site, index) => ({ ...site, sortOrder: index }));
@@ -987,21 +992,22 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
       </button>
 
       <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
-        <button
-          className="sidebar-collapse-button"
-          onClick={() => setSidebarCollapsed((current) => !current)}
-          aria-label={sidebarCollapsed ? "展开侧边栏" : "收缩侧边栏"}
-          title={sidebarCollapsed ? "展开侧边栏" : "收缩侧边栏"}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-        </button>
         <div className="sidebar-topline" />
         <div className="brand-lockup">
           <LogoMark />
           <div>
             <div className="brand-wordmark">tidal<span>/</span>index</div>
-            <p>你的数字入口集</p>
+            <p>你的私人书签</p>
           </div>
+          <button
+            className="sidebar-collapse-button"
+            onClick={() => setSidebarCollapsed((current) => !current)}
+            aria-label={sidebarCollapsed ? "展开侧边栏" : "收缩侧边栏"}
+            aria-expanded={!sidebarCollapsed}
+            title={sidebarCollapsed ? "展开侧边栏" : "收缩侧边栏"}
+          >
+            {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          </button>
           <button className="mobile-close glass-button" onClick={() => setMobileNavOpen(false)} aria-label="关闭分类导航">
             <X size={17} />
           </button>
@@ -1082,8 +1088,8 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
             <div className="overview-title-row"><h2>{activeLabel}</h2><span className="result-count">{filteredSites.length.toString().padStart(2, "0")} sites</span></div>
           </div>
           <div className="stats-row">
-            <StatChip label="全部入口" value={sites.length.toString().padStart(2, "0")} tone="mint" />
-            <StatChip label="我的收藏" value={favorites.length.toString().padStart(2, "0")} tone="rose" />
+            <StatChip label="全部入口" value={sites.length.toString().padStart(2, "0")} tone="mint" active={activeCategory === "all"} onClick={() => selectCategory("all")} />
+            <StatChip label="我的收藏" value={favorites.length.toString().padStart(2, "0")} tone="rose" active={activeCategory === "favorites"} onClick={() => selectCategory("favorites")} />
             <button className="add-inline-button" onClick={() => setAddOpen(true)}><Plus size={15} /> 添加入口</button>
           </div>
         </section>
@@ -1136,7 +1142,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
                       ><GripVertical size={15} /></button>
                     </div>
                   ) : (
-                    <button className={`favorite-button ${isFavorite ? "favorite-active" : ""}`} onClick={() => toggleFavorite(site.id)} aria-label={isFavorite ? `取消收藏 ${site.name}` : `收藏 ${site.name}`}>
+                    <button type="button" className={`favorite-button ${isFavorite ? "favorite-active" : ""}`} onClick={(event) => toggleFavorite(event, site)} aria-label={isFavorite ? `取消收藏 ${site.name}` : `收藏 ${site.name}`} title={isFavorite ? "取消收藏" : "加入收藏"}>
                       <Bookmark size={16} fill={isFavorite ? "currentColor" : "none"} />
                     </button>
                   )}
@@ -1152,9 +1158,9 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
 
           {filteredSites.length === 0 && (
             <div className="empty-state glass-panel">
-              <div className="empty-art" style={{ backgroundImage: `url(${ASSETS.ripple})` }}><Search size={26} /></div>
-              <div><p className="section-kicker">NO SIGNAL / 00</p><h3>还没有找到这个入口</h3><p>换个关键词试试，或者把它添加到你的导航里。</p></div>
-              <button className="primary-button" onClick={() => setAddOpen(true)}><Plus size={15} /> 添加网站</button>
+              <div className="empty-art"><Search size={26} /></div>
+              <div><p className="section-kicker">NO SIGNAL / 00</p><h3>{activeCategory === "favorites" && !query ? "还没有收藏任何入口" : "还没有找到这个入口"}</h3><p>{activeCategory === "favorites" && !query ? "点击任意卡片右上角的书签，就能在这里快速找到它。" : "换个关键词试试，或者把它添加到你的导航里。"}</p></div>
+              {activeCategory === "favorites" && !query ? <button className="primary-button" onClick={() => selectCategory("all")}><Grid2X2 size={15} /> 浏览全部入口</button> : <button className="primary-button" onClick={() => setAddOpen(true)}><Plus size={15} /> 添加网站</button>}
             </div>
           )}
         </section>
@@ -1164,7 +1170,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
             <div className="bottom-strip-copy"><p className="section-kicker">TIDAL NOTE / 04</p><h3>收藏一站，少一次搜索。</h3></div>
             <div className="bottom-strip-help"><CircleHelp size={16} /><span>快捷键 / 可随时聚焦搜索</span></div>
           </section>
-          <footer className="main-footer"><span>tidal/index 是你的个人入口集。</span><span>只保存在当前设备 · <button onClick={() => setSettingsOpen(true)}>调一调偏好</button></span></footer>
+          <footer className="main-footer"><span>tidal，你的书签收藏夹。</span><span>V{packageJson.version}</span></footer>
         </div>
         </div>
       </main>
@@ -1262,7 +1268,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
               <section className="setting-section"><label className="setting-label">卡片密度</label><div className="segmented-control"><button className={viewMode === "comfortable" ? "segment-active" : ""} onClick={() => setViewMode("comfortable")}><Grid2X2 size={14} /> 舒适</button><button className={viewMode === "dense" ? "segment-active" : ""} onClick={() => setViewMode("dense")}><LayoutList size={14} /> 紧凑</button></div></section>
               <section className="setting-section"><label className="setting-label">入口排序</label><div className="select-wrap"><select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}><option value="curated">编辑精选顺序</option><option value="az">按名称排列</option></select><ChevronRight size={15} /></div></section>
               <section className="setting-section"><div className="setting-row"><div><label className="setting-label">显示描述</label><p className="setting-hint">在网站卡片下显示一句简介。</p></div><button className={`toggle ${showDescriptions ? "toggle-on" : ""}`} onClick={() => setShowDescriptions(!showDescriptions)} aria-label="切换网站描述"><span /></button></div></section>
-              <section className="setting-preview"><div className="preview-image" style={{ backgroundImage: `url(${ASSETS.orbit})` }} /><div><p className="section-kicker">MATERIAL NOTE</p><h3>玻璃的透明度，给内容留出呼吸。</h3><p>所有偏好只影响当前设备，不会上传。</p></div></section>
+              <section className="setting-preview"><div className="preview-image" /><div><p className="section-kicker">MATERIAL NOTE</p><h3>玻璃的透明度，给内容留出呼吸。</h3><p>所有偏好只影响当前设备，不会上传。</p></div></section>
             </div>
             <div className="drawer-footer"><button className="secondary-button" onClick={() => { setFavorites([]); toast.success("收藏已清空"); }}>清空收藏</button><button className="primary-button" onClick={() => setSettingsOpen(false)}><Check size={15} /> 保存并返回</button></div>
           </aside>

@@ -51,8 +51,8 @@
   --border: oklch(1 0 0 / 11%);
   --input: oklch(1 0 0 / 13%);
   --ring: oklch(0.82 0.14 164);
-  --font-display: "Space Grotesk", sans-serif;
-  --font-body: "DM Sans", sans-serif;
+  --font-display: "MiSans", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-body: "MiSans", "Noto Sans SC", "Microsoft YaHei", sans-serif;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 }
 
@@ -549,31 +549,19 @@ a {
     padding 280ms var(--ease-out);
 }
 .sidebar-collapse-button {
-  position: absolute;
-  top: 50%;
-  right: -16px;
-  z-index: 12;
   display: grid;
+  flex: 0 0 34px;
   place-items: center;
-  width: 32px;
-  height: 48px;
-  border: 1px solid var(--line-bright);
-  border-left-color: rgba(255, 255, 255, 0.08);
-  border-radius: 0 14px 14px 0;
-  color: var(--text-soft);
-  background:
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.16),
-      rgba(255, 255, 255, 0.07)
-    ),
-    var(--glass-strong);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    8px 10px 24px rgba(0, 0, 0, 0.16);
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  color: var(--text-faint);
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
   transition:
     color 180ms var(--ease-out),
     border-color 180ms var(--ease-out),
@@ -581,29 +569,21 @@ a {
     box-shadow 180ms var(--ease-out),
     transform 180ms var(--ease-out);
 }
-.sidebar-collapse-button::before {
-  content: "";
-  position: absolute;
-  left: 5px;
-  width: 2px;
-  height: 16px;
-  border-radius: 999px;
-  background: currentColor;
-  opacity: 0.18;
-}
 .sidebar-collapse-button:hover {
   color: #64d2ff;
-  border-color: rgba(100, 210, 255, 0.5);
-  background:
-    linear-gradient(180deg, rgba(10, 132, 255, 0.25), rgba(10, 132, 255, 0.12)),
-    var(--glass-strong);
+  border-color: rgba(100, 210, 255, 0.38);
+  background: rgba(10, 132, 255, 0.12);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.3),
-    10px 12px 28px rgba(0, 113, 227, 0.16);
-  transform: translate(2px, -50%);
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    0 8px 20px rgba(0, 113, 227, 0.12);
+  transform: translateY(-1px);
 }
 .sidebar-collapse-button:active {
-  transform: translate(1px, -50%) scale(0.96);
+  transform: scale(0.96);
+}
+.sidebar-collapse-button:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 2px;
 }
 .sidebar-topline {
   width: 52px;
@@ -875,11 +855,15 @@ a {
   }
   .sidebar-collapsed .sidebar-topline {
     width: 25px;
-    margin: 0 auto 34px;
+    margin: 0 auto 22px;
   }
   .sidebar-collapsed .brand-lockup {
-    justify-content: center;
-    margin-bottom: 48px;
+    flex-direction: column;
+    gap: 11px;
+    margin-bottom: 32px;
+  }
+  .sidebar-collapsed .sidebar-collapse-button {
+    margin-left: 0;
   }
   .sidebar-collapsed .brand-lockup > div:nth-child(2),
   .sidebar-collapsed .sidebar-section-label,
@@ -1251,7 +1235,19 @@ a {
   border: 1px solid var(--line);
   border-radius: 10px;
   color: var(--text-soft);
+  background: transparent;
   font-size: 10px;
+  cursor: pointer;
+}
+.stat-chip-active {
+  border-color: rgba(100, 210, 255, 0.38);
+  color: var(--text);
+  background: rgba(100, 210, 255, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.stat-chip:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 2px;
 }
 .stat-chip strong {
   font-family: var(--font-display);
@@ -1333,6 +1329,7 @@ a {
 .site-card .favorite-button {
   position: relative;
   z-index: 3;
+  pointer-events: auto;
 }
 .site-card:nth-child(2) {
   animation-delay: 50ms;
@@ -1560,8 +1557,10 @@ a {
   height: 116px;
   border-radius: 21px;
   color: var(--mint);
-  background-size: cover;
-  background-position: center;
+  background:
+    radial-gradient(circle at 28% 26%, rgba(146, 240, 208, 0.38), transparent 34%),
+    radial-gradient(circle at 72% 68%, rgba(94, 169, 255, 0.3), transparent 42%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.12), rgba(8, 19, 29, 0.22));
 }
 .empty-state h3 {
   margin: 9px 0 5px;
@@ -2009,8 +2008,10 @@ a {
 .preview-image {
   position: absolute;
   inset: 0;
-  background-position: center;
-  background-size: cover;
+  background:
+    radial-gradient(circle at 76% 28%, rgba(146, 240, 208, 0.52), transparent 26%),
+    radial-gradient(circle at 62% 72%, rgba(83, 132, 255, 0.42), transparent 34%),
+    linear-gradient(125deg, rgba(8, 19, 29, 0.08) 20%, rgba(91, 181, 191, 0.34));
   opacity: 0.65;
   mask-image: linear-gradient(90deg, transparent, #000 60%);
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 60%);
@@ -4097,7 +4098,10 @@ select:focus-visible {
   transform: none;
 }
 .sidebar-collapse-button:hover {
-  transform: translateY(-50%);
+  transform: translateY(-1px);
+}
+.sidebar-collapse-button:active {
+  transform: scale(0.96);
 }
 @media (min-width: 781px) {
   .sidebar-collapsed .brand-lockup > div:nth-child(2),

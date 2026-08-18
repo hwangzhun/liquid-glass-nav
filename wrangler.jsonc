@@ -6,8 +6,8 @@
   "d1_databases": [
     {
       "binding": "NAV_DB",
-      "database_name": "liquid-glass-nav",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_name": "liquid-glass-nav-db",
+      "database_id": "02cb5e80-9133-4775-8f53-5524e1d8a813",
       "migrations_dir": "./migrations"
     }
   ]

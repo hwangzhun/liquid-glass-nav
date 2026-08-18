@@ -38,7 +38,7 @@ function LoginScreen({ configured, error, pending, onSubmit }: { configured: boo
         <div className="login-mark" aria-hidden="true"><span><i /><i /></span></div>
         <p className="login-kicker">PRIVATE INDEX / ACCESS</p>
         <h1 id="login-title">欢迎回来</h1>
-        <p className="login-intro">这是你的私人入口集。输入站点密码，继续回到工作台。</p>
+        <p className="login-intro">这是你的私人书签工作台。输入站点密码，继续回到工作台。</p>
         <form onSubmit={submit}>
           <label htmlFor="login-password">站点密码</label>
           <div className="login-input-wrap">
