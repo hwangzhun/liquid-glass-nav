@@ -5,7 +5,7 @@ type SitePayload = {
   name: string;
   url: string;
   description: string;
-  category: "design" | "dev" | "productivity" | "inspiration";
+  category: string;
   categoryLabel: string;
   icon: string;
   iconUrl?: string;
@@ -32,14 +32,11 @@ type SiteRow = {
   sort_order: number;
 };
 
-const categories = new Set(["design", "dev", "productivity", "inspiration"]);
-
 function sanitizeSite(value: unknown, fallbackSortOrder = 0): SitePayload {
   if (!value || typeof value !== "object") throw new Error("网站数据格式不正确。");
   const data = value as Record<string, unknown>;
   const required = ["id", "name", "url", "description", "category", "categoryLabel", "icon", "iconTone"];
   if (required.some((key) => typeof data[key] !== "string")) throw new Error("网站数据缺少必要字段。");
-  if (!categories.has(data.category as string)) throw new Error("网站分类无效。");
   const parsedUrl = new URL(data.url as string);
   if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error("网站地址无效。");
   return {
@@ -127,5 +124,21 @@ export async function onRequestPost(context: PagesContext) {
     return json({ success: true, sites });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "保存网站失败。" }, { status: 400 });
+  }
+}
+export async function onRequestDelete(context: PagesContext) {
+  const unauthorized = await requireAuthenticated(context.request, context.env);
+  if (unauthorized) return unauthorized;
+  try {
+    const workspace = workspaceId(context.request);
+    const body = await context.request.json() as { id?: unknown };
+    if (typeof body.id !== "string" || !body.id.trim()) throw new Error("入口 ID 无效。");
+    const id = body.id.trim().slice(0, 120);
+    await context.env.NAV_DB.prepare(
+      "DELETE FROM sites WHERE workspace_id = ? AND id = ?",
+    ).bind(workspace, id).run();
+    return json({ success: true, id });
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : "删除网站失败。" }, { status: 400 });
   }
 }

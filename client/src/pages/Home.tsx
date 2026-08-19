@@ -63,111 +63,7 @@ type Site = {
   sortOrder?: number;
 };
 
-const initialSites: Site[] = [
-  {
-    id: "figma",
-    name: "Figma",
-    url: "https://www.figma.com",
-    description: "把想法快速变成可协作的界面与原型。",
-    category: "design",
-    categoryLabel: "设计工作室",
-    icon: "Fi",
-    iconTone: "peach",
-    tags: ["协作", "原型"],
-    featured: true,
-    accent: "mint",
-  },
-  {
-    id: "github",
-    name: "GitHub",
-    url: "https://github.com",
-    description: "代码、项目与团队协作的开放档案。",
-    category: "dev",
-    categoryLabel: "开发工具",
-    icon: "GH",
-    iconTone: "ink",
-    tags: ["代码", "开源"],
-    accent: "blue",
-  },
-  {
-    id: "notion",
-    name: "Notion",
-    url: "https://www.notion.so",
-    description: "让笔记、计划和知识在一个空间里生长。",
-    category: "productivity",
-    categoryLabel: "效率工具",
-    icon: "N",
-    iconTone: "paper",
-    tags: ["笔记", "数据库"],
-  },
-  {
-    id: "linear",
-    name: "Linear",
-    url: "https://linear.app",
-    description: "把复杂项目拆成更清晰的下一步。",
-    category: "productivity",
-    categoryLabel: "效率工具",
-    icon: "L",
-    iconTone: "violet",
-    tags: ["项目", "团队"],
-    accent: "violet",
-  },
-  {
-    id: "dribbble",
-    name: "Dribbble",
-    url: "https://dribbble.com",
-    description: "每天收集一点视觉灵感，留给下一个好点子。",
-    category: "inspiration",
-    categoryLabel: "灵感收藏",
-    icon: "Dr",
-    iconTone: "rose",
-    tags: ["灵感", "作品"],
-  },
-  {
-    id: "vercel",
-    name: "Vercel",
-    url: "https://vercel.com",
-    description: "让前端项目从本地走向更快的发布体验。",
-    category: "dev",
-    categoryLabel: "开发工具",
-    icon: "▲",
-    iconTone: "snow",
-    tags: ["部署", "前端"],
-  },
-  {
-    id: "are.na",
-    name: "Are.na",
-    url: "https://www.are.na",
-    description: "把松散的灵感连成一条有趣的线。",
-    category: "inspiration",
-    categoryLabel: "灵感收藏",
-    icon: "A",
-    iconTone: "sand",
-    tags: ["研究", "收藏"],
-  },
-  {
-    id: "raycast",
-    name: "Raycast",
-    url: "https://www.raycast.com",
-    description: "用一次快捷键，把常用操作拉到手边。",
-    category: "productivity",
-    categoryLabel: "效率工具",
-    icon: "R",
-    iconTone: "glow",
-    tags: ["快捷键", "效率"],
-  },
-  {
-    id: "github-copilot",
-    name: "Copilot",
-    url: "https://github.com/features/copilot",
-    description: "在编写代码时，让思路多一个安静的陪伴。",
-    category: "dev",
-    categoryLabel: "开发工具",
-    icon: "Co",
-    iconTone: "sage",
-    tags: ["AI", "代码"],
-  },
-];
+const initialSites: Site[] = [];
 
 const categoryIconMap = {
   grid: Grid2X2,
@@ -196,10 +92,6 @@ const categoryIconOptions: { key: CategoryIconKey; label: string }[] = [
 
 const defaultCategoryMeta: Category[] = [
   { id: "all", label: "全部入口", iconKey: "grid", color: "mint", system: true },
-  { id: "design", label: "设计工作室", iconKey: "sparkles", color: "peach" },
-  { id: "dev", label: "开发工具", iconKey: "sliders", color: "blue" },
-  { id: "productivity", label: "效率工具", iconKey: "list", color: "violet" },
-  { id: "inspiration", label: "灵感收藏", iconKey: "compass", color: "orange" },
   { id: "favorites", label: "我的收藏", iconKey: "bookmark", color: "rose", system: true },
 ];
 
@@ -379,7 +271,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
   const [editingCategoryId, setEditingCategoryId] = useState<CategoryId | null>(null);
   const [pendingDeleteCategoryId, setPendingDeleteCategoryId] = useState<CategoryId | null>(null);
   const [draggingCategoryId, setDraggingCategoryId] = useState<CategoryId | null>(null);
-  const [newSite, setNewSite] = useState({ name: "", url: "", description: "", category: "design" as Site["category"], tags: [] as string[], iconUrl: "" });
+  const [newSite, setNewSite] = useState({ name: "", url: "", description: "", category: "" as Site["category"], tags: [] as string[], iconUrl: "" });
   const [analyzingSite, setAnalyzingSite] = useState(false);
   const [analysisSource, setAnalysisSource] = useState<AnalysisSource | null>(null);
 
@@ -400,12 +292,14 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
           setSites(remoteSites);
         } else {
           const localSites = readLocal<Site[]>("tidal-sites", initialSites);
-          const seedResponse = await fetch("/api/sites", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "x-workspace-id": workspaceId },
-            body: JSON.stringify({ sites: localSites }),
-          });
-          if (!seedResponse.ok) throw new Error("D1 seed failed");
+          if (localSites.length) {
+            const seedResponse = await fetch("/api/sites", {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-workspace-id": workspaceId },
+              body: JSON.stringify({ sites: localSites }),
+            });
+            if (!seedResponse.ok) throw new Error("D1 seed failed");
+          }
         }
         if (!cancelled) setStorageMode("cloud");
       } catch {
@@ -489,7 +383,22 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
   }, [categories]);
   const categoryNames = useMemo(() => Object.fromEntries(categories.map((category) => [category.id, category.label])) as Record<string, string>, [categories]);
   const contentCategories = useMemo(() => categories.filter((category) => !category.system), [categories]);
-  const defaultContentCategoryId = contentCategories[0]?.id || "design";
+  const defaultContentCategoryId = contentCategories[0]?.id || "";
+
+  const openAddSite = () => {
+    if (!contentCategories.length) {
+      setSettingsOpen(true);
+      setAddingCategory(true);
+      setEditingCategoryId(null);
+      setPendingDeleteCategoryId(null);
+      toast.message("请先创建一个分类，再添加入口。");
+      return;
+    }
+    setNewSite((current) => contentCategories.some((category) => category.id === current.category)
+      ? current
+      : { ...current, category: defaultContentCategoryId });
+    setAddOpen(true);
+  };
 
   const filteredSites = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -560,6 +469,32 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     const payload = isJson ? await response.json().catch(() => ({})) as { success?: boolean; error?: string } : {};
     if (!response.ok || payload.success !== true) throw new Error(payload.error || "云端保存失败。");
     return true;
+  };
+
+  const deleteSite = async (site: Site) => {
+    if (!editMode || !window.confirm(`确认删除“${site.name}”？此操作无法撤销。`)) return;
+    const nextSites = withSortOrder(sites.filter((item) => item.id !== site.id));
+    setSavingSite(true);
+    try {
+      const response = await fetch("/api/sites", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "x-workspace-id": workspaceId },
+        body: JSON.stringify({ id: site.id }),
+      });
+      const isJson = response.headers.get("content-type")?.includes("application/json") === true;
+      const payload = isJson ? await response.json().catch(() => ({})) as { success?: boolean; error?: string } : {};
+      const cloudSaved = response.ok && payload.success === true;
+      if (!cloudSaved && !import.meta.env.DEV) throw new Error(payload.error || "D1 删除失败。");
+      setSites(nextSites);
+      setFavorites((current) => current.filter((id) => id !== site.id));
+      setEditingSite((current) => current?.id === site.id ? null : current);
+      setStorageMode(cloudSaved ? "cloud" : "local");
+      toast.success(cloudSaved ? `已删除“${site.name}”并同步。` : `已从当前设备删除“${site.name}”。`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "删除入口失败。");
+    } finally {
+      setSavingSite(false);
+    }
   };
 
   const moveSite = (sourceId: string, targetId: string) => {
@@ -791,6 +726,10 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     event.preventDefault();
     if (!analysisSource) {
       toast.error("请先让 AI 分析网站，再确认保存。");
+      return;
+    }
+    if (!contentCategories.some((category) => category.id === newSite.category)) {
+      toast.error("请先创建并选择一个分类。");
       return;
     }
     if (!newSite.name.trim() || !newSite.url.trim()) {
@@ -1090,7 +1029,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
           <div className="stats-row">
             <StatChip label="全部入口" value={sites.length.toString().padStart(2, "0")} tone="mint" active={activeCategory === "all"} onClick={() => selectCategory("all")} />
             <StatChip label="我的收藏" value={favorites.length.toString().padStart(2, "0")} tone="rose" active={activeCategory === "favorites"} onClick={() => selectCategory("favorites")} />
-            <button className="add-inline-button" onClick={() => setAddOpen(true)}><Plus size={15} /> 添加入口</button>
+            <button className="add-inline-button" onClick={openAddSite}><Plus size={15} /> 添加入口</button>
           </div>
         </section>
 
@@ -1098,7 +1037,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
           <div className="edit-mode-hint" role="status">
             <span className="edit-mode-pulse" />
             <strong>编辑模式</strong>
-            <span>拖动卡片右上角的把手调整顺序，点击铅笔修改入口。</span>
+            <span>拖动卡片右上角的把手调整顺序，也可修改或删除入口。</span>
             <button onClick={finishEditMode}><Check size={14} /> 完成</button>
           </div>
         )}
@@ -1127,6 +1066,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
                   {editMode ? (
                     <div className="site-edit-controls">
                       <button className="site-edit-button" onClick={() => openSiteEditor(site)} aria-label={`编辑 ${site.name}`} title="编辑入口"><Pencil size={14} /></button>
+                      <button className="site-delete-button" onClick={() => void deleteSite(site)} disabled={savingSite} aria-label={`删除 ${site.name}`} title="删除入口"><Trash2 size={14} /></button>
                       <button
                         className="site-drag-handle"
                         onPointerDown={(event) => beginSiteDrag(event, site.id)}
@@ -1159,8 +1099,8 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
           {filteredSites.length === 0 && (
             <div className="empty-state glass-panel">
               <div className="empty-art"><Search size={26} /></div>
-              <div><p className="section-kicker">NO SIGNAL / 00</p><h3>{activeCategory === "favorites" && !query ? "还没有收藏任何入口" : "还没有找到这个入口"}</h3><p>{activeCategory === "favorites" && !query ? "点击任意卡片右上角的书签，就能在这里快速找到它。" : "换个关键词试试，或者把它添加到你的导航里。"}</p></div>
-              {activeCategory === "favorites" && !query ? <button className="primary-button" onClick={() => selectCategory("all")}><Grid2X2 size={15} /> 浏览全部入口</button> : <button className="primary-button" onClick={() => setAddOpen(true)}><Plus size={15} /> 添加网站</button>}
+              <div><p className="section-kicker">NO SIGNAL / 00</p><h3>{activeCategory === "favorites" && !query ? "还没有收藏任何入口" : !sites.length && !query ? "还没有添加任何入口" : "还没有找到这个入口"}</h3><p>{activeCategory === "favorites" && !query ? "点击任意卡片右上角的书签，就能在这里快速找到它。" : !sites.length && !query ? "先创建一个分类，再添加你的第一个网站。" : "换个关键词试试，或者把它添加到你的导航里。"}</p></div>
+              {activeCategory === "favorites" && !query ? <button className="primary-button" onClick={() => selectCategory("all")}><Grid2X2 size={15} /> 浏览全部入口</button> : <button className="primary-button" onClick={openAddSite}><Plus size={15} /> {contentCategories.length ? "添加网站" : "创建分类"}</button>}
             </div>
           )}
         </section>
@@ -1208,7 +1148,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
               </section>
               <section className="setting-section category-settings">
                 <div className="setting-row category-settings-heading">
-                  <div><label className="setting-label">分类管理</label><p className="setting-hint">新增、编辑或拖动排序；“全部入口”为默认分类。</p></div>
+                  <div><label className="setting-label">分类管理</label><p className="setting-hint">新增、编辑或拖动排序；默认分类不会显示在这里。</p></div>
                   <button type="button" className="category-add-button" onClick={() => { setAddingCategory((current) => !current); setEditingCategoryId(null); setPendingDeleteCategoryId(null); }}><Plus size={13} /> 新增</button>
                 </div>
                 {addingCategory && (
@@ -1219,7 +1159,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
                   </div>
                 )}
                 <div className="category-settings-list">
-                  {categoryMeta.filter((category) => category.id !== "all").map((category) => {
+                  {categoryMeta.filter((category) => !category.system).map((category) => {
                     const count = category.id === "all" ? sites.length : category.id === "favorites" ? favorites.length : categoryCounts[category.id] || 0;
                     const isEditing = editingCategoryId === category.id;
                     const isPendingDelete = pendingDeleteCategoryId === category.id;
