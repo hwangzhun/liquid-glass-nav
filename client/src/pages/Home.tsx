@@ -8,6 +8,7 @@ import {
   Compass,
   Folder,
   Grid2X2,
+  Grid3X3,
   GripVertical,
   ImagePlus,
   Keyboard,
@@ -35,7 +36,7 @@ import { toast } from "sonner";
 
 type CategoryId = string;
 type SortMode = "curated" | "az";
-type ViewMode = "comfortable" | "dense";
+type ViewMode = "comfortable" | "dense" | "icon";
 type BackgroundMode = "mist" | "blue" | "midnight" | "custom";
 type AnalysisSource = "ai" | "local";
 
@@ -1192,7 +1193,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
                   })}
                 </div>
               </section>
-              <section className="setting-section"><label className="setting-label">卡片密度</label><div className="segmented-control"><button className={viewMode === "comfortable" ? "segment-active" : ""} onClick={() => setViewMode("comfortable")}><Grid2X2 size={14} /> 舒适</button><button className={viewMode === "dense" ? "segment-active" : ""} onClick={() => setViewMode("dense")}><LayoutList size={14} /> 紧凑</button></div></section>
+              <section className="setting-section"><label className="setting-label">入口模块大小</label><div className="segmented-control"><button className={viewMode === "comfortable" ? "segment-active" : ""} onClick={() => setViewMode("comfortable")}><Grid2X2 size={14} /> 舒适</button><button className={viewMode === "dense" ? "segment-active" : ""} onClick={() => setViewMode("dense")}><LayoutList size={14} /> 紧凑</button><button className={viewMode === "icon" ? "segment-active" : ""} onClick={() => setViewMode("icon")}><Grid3X3 size={14} /> 小图标</button></div><p className="setting-hint">小图标模式仅显示图标、标题和分类。</p></section>
               <section className="setting-section"><label className="setting-label">入口排序</label><div className="select-wrap"><select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}><option value="curated">编辑精选顺序</option><option value="az">按名称排列</option></select><ChevronRight size={15} /></div></section>
               <section className="setting-section"><div className="setting-row"><div><label className="setting-label">显示描述</label><p className="setting-hint">在网站卡片下显示一句简介。</p></div><button className={`toggle ${showDescriptions ? "toggle-on" : ""}`} onClick={() => setShowDescriptions(!showDescriptions)} aria-label="切换网站描述"><span /></button></div></section>
               <section className="setting-preview"><div className="preview-image" /><div><p className="section-kicker">MATERIAL NOTE</p><h3>玻璃的透明度，给内容留出呼吸。</h3><p>所有偏好只影响当前设备，不会上传。</p></div></section>
