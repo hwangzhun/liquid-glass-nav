@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="_图层_1" data-name="图层 1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1000 1000">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        fill: #dbeefe;
+      }
+
+      .cls-3 {
+        fill: url(#_未命名的渐变_21);
+      }
+    </style>
+    <linearGradient id="_未命名的渐变_21" data-name="未命名的渐变 21" x1="1220" y1="1220" x2="-11.4" y2="-11.4" gradientUnits="userSpaceOnUse">
+      <stop offset=".18" stop-color="#0a84ff" stop-opacity=".14"/>
+      <stop offset=".19" stop-color="#0f86ff" stop-opacity=".15"/>
+      <stop offset=".31" stop-color="#57aaff" stop-opacity=".34"/>
+      <stop offset=".42" stop-color="#93c8ff" stop-opacity=".5"/>
+      <stop offset=".52" stop-color="#c2e0ff" stop-opacity=".62"/>
+      <stop offset=".62" stop-color="#e3f1ff" stop-opacity=".71"/>
+      <stop offset=".71" stop-color="#f7fbff" stop-opacity=".76"/>
+      <stop offset=".77" stop-color="#fff" stop-opacity=".78"/>
+    </linearGradient>
+  </defs>
+  <rect class="cls-3" width="1000" height="1000"/>
+  <g>
+    <rect class="cls-2" x="207" y="207" width="271.93" height="271.93" rx="43.88" ry="43.88" transform="translate(685.93 0) rotate(90)"/>
+    <rect class="cls-1" x="521.07" y="521.07" width="271.93" height="271.93" rx="43.88" ry="43.88" transform="translate(1314.0677 .0001) rotate(90)"/>
+    <rect class="cls-1" x="521.07" y="207" width="271.93" height="271.93" rx="43.88" ry="43.88" transform="translate(1000.0001 -314.0676) rotate(90)"/>
+    <rect class="cls-1" x="207" y="521.07" width="271.93" height="271.93" rx="43.88" ry="43.88" transform="translate(1000 314.0678) rotate(90)"/>
+  </g>
+</svg>

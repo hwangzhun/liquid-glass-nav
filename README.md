@@ -18,6 +18,12 @@
 
 ## 更新日志
 
+### 2026-08-20 V1.0.2
+
+- 全局字体切换为 SF Pro SC，通过 jsDelivr 加载 SF Pro Webfont，并保留苹方、微软雅黑和系统字体回退
+- 重整全局字号层级，将过小的辅助文字提升到更易读的尺寸，统一正文、标签、标题和展示字号变量
+
+
 ### 2026-08-20 V1.0.1
 
 - 入口编辑模式新增删除功能
@@ -97,6 +103,24 @@ npm run build:pages
 ```
 
 Pages 前端产物会生成在 `dist/public`。
+
+### 更换网站 Logo 与生成缩略图
+
+项目根目录的 `logo.svg` 是网站标志的源文件。替换该文件后，在项目根目录运行：
+
+```powershell
+Copy-Item -LiteralPath ".\logo.svg" -Destination ".\client\public\logo.svg" -Force
+
+node -e "const sharp=require('sharp'); Promise.all([sharp('logo.svg').resize(512,512).png().toFile('client/public/logo-512.png'), sharp('logo.svg').resize(180,180).png().toFile('client/public/apple-touch-icon.png')]).catch(error=>{console.error(error);process.exit(1)})"
+```
+
+该命令会更新：
+
+- `client/public/logo.svg`：侧栏 Logo 和浏览器 favicon
+- `client/public/logo-512.png`：Open Graph 与 Twitter 分享缩略图
+- `client/public/apple-touch-icon.png`：iOS 主屏幕图标
+
+源 SVG 建议保持 1:1 画布。生成命令使用项目依赖中的 Sharp；如果提示找不到模块，请先运行 `npm install`。
 
 ## 部署到 Cloudflare Pages
 

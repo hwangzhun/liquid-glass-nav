@@ -155,7 +155,7 @@ function getWorkspaceId() {
 function LogoMark() {
   return (
     <div className="logo-mark" aria-hidden="true">
-      <span className="tidal-mark"><i /><i /></span>
+      <img src="/logo.svg" alt="" />
     </div>
   );
 }
@@ -216,15 +216,6 @@ function SiteIcon({ site }: { site: Site }) {
     <span className={`site-icon site-icon-${site.iconTone}`}>
       {source && !iconFailed ? <img src={source} alt="" onError={() => setIconFailed(true)} /> : site.icon}
     </span>
-  );
-}
-
-function StatChip({ label, value, tone, active, onClick }: { label: string; value: string; tone: string; active: boolean; onClick: () => void }) {
-  return (
-    <button type="button" className={`stat-chip stat-${tone} ${active ? "stat-chip-active" : ""}`} onClick={onClick} aria-pressed={active}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </button>
   );
 }
 
@@ -1004,9 +995,9 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
         <section className="hero-section">
           <div className="hero-copy">
             <div className="eyebrow"><span className="eyebrow-line" /> PERSONAL INDEX / 01</div>
-            <h1>让每天要用的入口，<em>随手可得。</em></h1>
-            <p>把分散的互联网入口整理成一块有呼吸感的个人工作台。</p>
-            <div className="hero-meta"><span><span className="live-dot" /> {sites.length} 个入口已就绪</span><span className="meta-separator" /> <span>本地空间 · 私人使用</span></div>
+            <h1>让每天要用的网站，<em>随手可得。</em></h1>
+            <p>把分散的网站汇聚成一个有呼吸感的个人导航页。</p>
+            <div className="hero-meta"><span><span className="live-dot" /> {sites.length} 个入口已就绪</span></div>
           </div>
           <div className="hero-visual" aria-hidden="true">
             <div className="hero-visual-note"><span>THE QUIET WEB</span><strong>01<span>/</span>09</strong></div>
@@ -1026,11 +1017,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
             <p className="section-kicker">CURATED SPACE</p>
             <div className="overview-title-row"><h2>{activeLabel}</h2><span className="result-count">{filteredSites.length.toString().padStart(2, "0")} sites</span></div>
           </div>
-          <div className="stats-row">
-            <StatChip label="全部入口" value={sites.length.toString().padStart(2, "0")} tone="mint" active={activeCategory === "all"} onClick={() => selectCategory("all")} />
-            <StatChip label="我的收藏" value={favorites.length.toString().padStart(2, "0")} tone="rose" active={activeCategory === "favorites"} onClick={() => selectCategory("favorites")} />
-            <button className="add-inline-button" onClick={openAddSite}><Plus size={15} /> 添加入口</button>
-          </div>
+          <button className="add-inline-button" onClick={openAddSite}><Plus size={15} /> 添加入口</button>
         </section>
 
         {editMode && (
