@@ -1,4 +1,8 @@
-export type D1Result<T = unknown> = { results?: T[]; success: boolean; meta?: Record<string, unknown> };
+export type D1Result<T = unknown> = {
+  results?: T[];
+  success: boolean;
+  meta?: Record<string, unknown>;
+};
 
 export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
@@ -30,14 +34,19 @@ export function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), { ...init, headers });
 }
 
-export function workspaceId(request: Request) {
-  const id = request.headers.get("x-workspace-id")?.trim() || "";
-  if (!/^[a-zA-Z0-9_-]{16,80}$/.test(id)) throw new Error("无效的 workspace ID。");
-  return id;
+export const PRIMARY_WORKSPACE_ID = "private-default";
+
+export function workspaceId(_request: Request) {
+  // A valid password session owns the single shared private workspace.
+  return PRIMARY_WORKSPACE_ID;
 }
 
-export async function requireAuthenticated(request: Request, env: CloudflareEnv) {
+export async function requireAuthenticated(
+  request: Request,
+  env: CloudflareEnv
+) {
   const { hasValidSession } = await import("../shared/auth");
-  if (await hasValidSession(request.headers.get("Cookie"), env.NAV_PASSWORD)) return null;
+  if (await hasValidSession(request.headers.get("Cookie"), env.NAV_PASSWORD))
+    return null;
   return json({ error: "请先登录。" }, { status: 401 });
 }

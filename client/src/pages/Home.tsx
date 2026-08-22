@@ -6,6 +6,7 @@ import {
   ChevronRight,
   CircleHelp,
   Compass,
+  Download,
   Folder,
   Grid2X2,
   Grid3X3,
@@ -13,6 +14,7 @@ import {
   ImagePlus,
   Keyboard,
   LayoutList,
+  LogIn,
   LogOut,
   Menu,
   Moon,
@@ -28,6 +30,7 @@ import {
   Sun,
   Tags,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { CSSProperties, DragEvent as ReactDragEvent, FormEvent, MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -39,6 +42,32 @@ type SortMode = "curated" | "az";
 type ViewMode = "comfortable" | "dense" | "icon";
 type BackgroundMode = "mist" | "blue" | "midnight" | "custom";
 type AnalysisSource = "ai" | "local";
+
+type CloudPreferences = {
+  skin?: "dark" | "light";
+  viewMode?: ViewMode;
+  sortMode?: SortMode;
+  showDescriptions?: boolean;
+  siteName?: string;
+  sidebarCollapsed?: boolean;
+  backgroundMode?: BackgroundMode;
+  customBackground?: string;
+  backgroundImage?: string;
+  backgroundImageBlur?: number;
+  backgroundImageBrightness?: number;
+  backgroundImageContrast?: number;
+  backgroundImageAdaptive?: boolean;
+};
+
+type CloudState = {
+  categories: Category[];
+  favorites: string[];
+  preferences: CloudPreferences;
+};
+
+type CloudStateResponse = {
+  state: CloudState | null;
+};
 
 type Category = {
   id: CategoryId;
@@ -62,6 +91,30 @@ type Site = {
   featured?: boolean;
   accent?: string;
   sortOrder?: number;
+};
+
+type ImportedBookmark = {
+  name: string;
+  url: string;
+  description?: string;
+  iconUrl?: string;
+  icon?: string;
+  tags?: string[];
+  favorite?: boolean;
+};
+
+type ImportedBookmarkGroup = {
+  label: string;
+  bookmarks: ImportedBookmark[];
+};
+
+type BookmarkExport = {
+  format: "liquid-glass-nav";
+  version: 1;
+  exportedAt: string;
+  categories: Category[];
+  sites: Site[];
+  favorites: string[];
 };
 
 const initialSites: Site[] = [];
@@ -112,6 +165,111 @@ function readLocal<T>(key: string, fallback: T): T {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeBookmarkUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(candidate);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+function decodeJsonString(value: string) {
+  try { return JSON.parse(`"${value}"`) as string; } catch { return value; }
+}
+
+function parseLooseWetabBookmarks(text: string): ImportedBookmarkGroup[] {
+  const headers = Array.from(text.matchAll(/"id"\s*:\s*"category-[^"]+"[\s\S]*?"name"\s*:\s*"((?:\\.|[^"\\])*)"[\s\S]*?"children"\s*:\s*\[/g));
+  const objectPattern = /\{[^{}]*"name"\s*:\s*"(?:\\.|[^"\\])*"[^{}]*"url"\s*:\s*"(?:\\.|[^"\\])*"[^{}]*\}/g;
+  const parseSegment = (segment: string) => Array.from(segment.matchAll(objectPattern)).flatMap((match) => {
+    try {
+      const item = JSON.parse(match[0]) as Record<string, unknown>;
+      if (typeof item.name !== "string" || typeof item.url !== "string") return [];
+      return [{
+        name: item.name.trim(),
+        url: item.url,
+        iconUrl: typeof item.bgImage === "string" ? item.bgImage : undefined,
+        icon: typeof item.bgText === "string" ? item.bgText : undefined,
+      } satisfies ImportedBookmark];
+    } catch {
+      return [];
+    }
+  });
+
+  const groups: ImportedBookmarkGroup[] = [];
+  const firstHeaderIndex = headers[0]?.index ?? text.length;
+  const leading = parseSegment(text.slice(0, firstHeaderIndex));
+  if (leading.length) groups.push({ label: "未分类", bookmarks: leading });
+  headers.forEach((header, index) => {
+    const start = (header.index ?? 0) + header[0].length;
+    const end = headers[index + 1]?.index ?? text.length;
+    const bookmarks = parseSegment(text.slice(start, end));
+    if (bookmarks.length) groups.push({ label: decodeJsonString(header[1]).trim() || "未分类", bookmarks });
+  });
+  return groups;
+}
+
+function parseBookmarkFile(text: string): ImportedBookmarkGroup[] {
+  let parsed: unknown;
+  try { parsed = JSON.parse(text.replace(/^\uFEFF/, "")); } catch { return parseLooseWetabBookmarks(text); }
+
+  if (isRecord(parsed) && parsed.format === "liquid-glass-nav" && Array.isArray(parsed.sites)) {
+    const categoryLabels = new Map<string, string>();
+    if (Array.isArray(parsed.categories)) {
+      parsed.categories.forEach((category) => {
+        if (isRecord(category) && typeof category.id === "string" && typeof category.label === "string") categoryLabels.set(category.id, category.label);
+      });
+    }
+    const favoriteIds = new Set(Array.isArray(parsed.favorites) ? parsed.favorites.filter((id): id is string => typeof id === "string") : []);
+    const groups = new Map<string, ImportedBookmark[]>();
+    parsed.sites.forEach((value) => {
+      if (!isRecord(value) || typeof value.name !== "string" || typeof value.url !== "string") return;
+      const categoryId = typeof value.category === "string" ? value.category : "";
+      const label = categoryLabels.get(categoryId) || (typeof value.categoryLabel === "string" ? value.categoryLabel : "未分类");
+      const bookmarks = groups.get(label) || [];
+      bookmarks.push({
+        name: value.name,
+        url: value.url,
+        description: typeof value.description === "string" ? value.description : undefined,
+        iconUrl: typeof value.iconUrl === "string" ? value.iconUrl : undefined,
+        icon: typeof value.icon === "string" ? value.icon : undefined,
+        tags: Array.isArray(value.tags) ? value.tags.filter((tag): tag is string => typeof tag === "string") : undefined,
+        favorite: typeof value.id === "string" && favoriteIds.has(value.id),
+      });
+      groups.set(label, bookmarks);
+    });
+    return Array.from(groups, ([label, bookmarks]) => ({ label, bookmarks }));
+  }
+
+  const groups: ImportedBookmarkGroup[] = [];
+  const visit = (value: unknown, inheritedLabel = "未分类") => {
+    if (Array.isArray(value)) return value.forEach((item) => visit(item, inheritedLabel));
+    if (!isRecord(value)) return;
+    if (typeof value.url === "string") {
+      const name = typeof value.name === "string" ? value.name : "";
+      let group = groups.find((item) => item.label === inheritedLabel);
+      if (!group) { group = { label: inheritedLabel, bookmarks: [] }; groups.push(group); }
+      group.bookmarks.push({ name, url: value.url, iconUrl: typeof value.bgImage === "string" ? value.bgImage : undefined, icon: typeof value.bgText === "string" ? value.bgText : undefined });
+      return;
+    }
+    if (Array.isArray(value.children)) {
+      const label = typeof value.name === "string" && value.name.trim() ? value.name.trim() : inheritedLabel;
+      value.children.forEach((item) => visit(item, label));
+      return;
+    }
+    Object.values(value).forEach((item) => visit(item, inheritedLabel));
+  };
+  visit(parsed);
+  return groups;
+}
+
 function getInitialCategories(): Category[] {
   const stored = readLocal<Category[]>("tidal-categories", []);
   if (Array.isArray(stored) && stored.length >= 3) {
@@ -142,17 +300,6 @@ function getInitialCategories(): Category[] {
   return ordered;
 }
 
-function getWorkspaceId() {
-  const key = "tidal-workspace-id";
-  const existing = window.localStorage.getItem(key);
-  if (existing) return existing;
-  const generated = typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `workspace-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  window.localStorage.setItem(key, generated);
-  return generated;
-}
-
 function LogoMark() {
   return (
     <div className="logo-mark" aria-hidden="true">
@@ -165,7 +312,7 @@ function CategoryIcon({ category }: { category: Category }) {
   const Icon = categoryIconMap[category.iconKey] || Folder;
   return (
     <span className={`category-icon icon-${category.color}`}>
-      <Icon size={15} strokeWidth={1.7} />
+      <Icon size={16} strokeWidth={1.7} />
     </span>
   );
 }
@@ -220,8 +367,10 @@ function SiteIcon({ site }: { site: Site }) {
   );
 }
 
-export default function Home({ onLogout }: { onLogout: () => void }) {
+export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthenticated: boolean; onLogin: () => void; onLogout: () => void }) {
   const searchRef = useRef<HTMLInputElement>(null);
+  const bookmarkImportRef = useRef<HTMLInputElement>(null);
+  const categoryNavRef = useRef<HTMLElement>(null);
   const draggingSiteIdRef = useRef<string | null>(null);
   const lastDragTargetRef = useRef<string | null>(null);
   const siteLayoutPositionsRef = useRef<Map<string, DOMRect>>(new Map());
@@ -229,16 +378,26 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
   const shouldAnimateSiteLayoutRef = useRef(false);
   const draggingCategoryIdRef = useRef<string | null>(null);
   const lastCategoryDragTargetRef = useRef<string | null>(null);
-  const [workspaceId] = useState(getWorkspaceId);
+  const settingsCloseTimerRef = useRef<number | null>(null);
+  const editHintExitTimerRef = useRef<number | null>(null);
+  const categoryTransitionTimersRef = useRef<number[]>([]);
   const [storageMode, setStorageMode] = useState<"connecting" | "cloud" | "local">("connecting");
+  const [cloudStateReady, setCloudStateReady] = useState(false);
+  const [lastSyncedLabel, setLastSyncedLabel] = useState("");
   const [savingSite, setSavingSite] = useState(false);
+  const [importingBookmarks, setImportingBookmarks] = useState(false);
   const [sites, setSites] = useState<Site[]>(() => readLocal("tidal-sites", initialSites));
   const [activeCategory, setActiveCategory] = useState<CategoryId>("all");
+  const [displayedCategory, setDisplayedCategory] = useState<CategoryId>("all");
+  const [categoryTransitionPhase, setCategoryTransitionPhase] = useState<"idle" | "exiting" | "entering" | "settled">("idle");
   const [query, setQuery] = useState("");
   const [favorites, setFavorites] = useState<string[]>(() => readLocal("tidal-favorites", []));
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsClosing, setSettingsClosing] = useState(false);
+  const [settingsPreviewRect, setSettingsPreviewRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [editHintExiting, setEditHintExiting] = useState(false);
   const [editingSite, setEditingSite] = useState<Site | null>(null);
   const [draggingSiteId, setDraggingSiteId] = useState<string | null>(null);
   const [orderDirty, setOrderDirty] = useState(false);
@@ -273,34 +432,99 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     let cancelled = false;
-    const syncSites = async () => {
+    setCloudStateReady(false);
+    const syncCloud = async () => {
       try {
-        const response = await fetch("/api/sites", { headers: { "x-workspace-id": workspaceId } });
-        if (!response.ok) throw new Error("D1 unavailable");
-        const payload = await response.json() as { sites?: Site[] };
-        const remoteSites = Array.isArray(payload.sites) ? payload.sites : [];
+        const [sitesResponse, stateResponse] = await Promise.all([
+          fetch("/api/sites"),
+          fetch("/api/state"),
+        ]);
+        if (!sitesResponse.ok || !stateResponse.ok) throw new Error("D1 unavailable");
+        const sitesPayload = await sitesResponse.json() as { sites?: Site[] };
+        const statePayload = await stateResponse.json() as CloudStateResponse;
+        const remoteSites = Array.isArray(sitesPayload.sites) ? sitesPayload.sites : [];
+        let resolvedSites = remoteSites;
         if (cancelled) return;
+
         if (remoteSites.length) {
           setSites(remoteSites);
         } else {
           const localSites = readLocal<Site[]>("tidal-sites", initialSites);
-          if (localSites.length) {
+          resolvedSites = isAuthenticated ? localSites : [];
+          if (!isAuthenticated) setSites([]);
+          if (localSites.length && isAuthenticated) {
             const seedResponse = await fetch("/api/sites", {
               method: "POST",
-              headers: { "Content-Type": "application/json", "x-workspace-id": workspaceId },
+              headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ sites: localSites }),
             });
             if (!seedResponse.ok) throw new Error("D1 seed failed");
           }
         }
-        if (!cancelled) setStorageMode("cloud");
+
+        const remoteState = statePayload.state;
+        if (remoteState) {
+          if (Array.isArray(remoteState.categories) && remoteState.categories.length >= 2) setCategories(remoteState.categories);
+          if (Array.isArray(remoteState.favorites)) setFavorites(remoteState.favorites);
+          const preferences = remoteState.preferences || {};
+          if (preferences.skin === "dark" || preferences.skin === "light") setSkin(preferences.skin);
+          if (["comfortable", "dense", "icon"].includes(String(preferences.viewMode))) setViewMode(preferences.viewMode as ViewMode);
+          if (preferences.sortMode === "curated" || preferences.sortMode === "az") setSortMode(preferences.sortMode);
+          if (typeof preferences.showDescriptions === "boolean") setShowDescriptions(preferences.showDescriptions);
+          if (typeof preferences.siteName === "string") setSiteName(preferences.siteName);
+          if (typeof preferences.sidebarCollapsed === "boolean") setSidebarCollapsed(preferences.sidebarCollapsed);
+          if (["mist", "blue", "midnight", "custom"].includes(String(preferences.backgroundMode))) setBackgroundMode(preferences.backgroundMode as BackgroundMode);
+          if (typeof preferences.customBackground === "string") setCustomBackground(preferences.customBackground);
+          if (typeof preferences.backgroundImage === "string") setBackgroundImage(preferences.backgroundImage);
+          if (typeof preferences.backgroundImageBlur === "number") setBackgroundImageBlur(preferences.backgroundImageBlur);
+          if (typeof preferences.backgroundImageBrightness === "number") setBackgroundImageBrightness(preferences.backgroundImageBrightness);
+          if (typeof preferences.backgroundImageContrast === "number") setBackgroundImageContrast(preferences.backgroundImageContrast);
+          if (typeof preferences.backgroundImageAdaptive === "boolean") setBackgroundImageAdaptive(preferences.backgroundImageAdaptive);
+        } else {
+          const seedCategories = isAuthenticated ? [...categories] : defaultCategoryMeta.map((category) => ({ ...category }));
+          for (const site of resolvedSites) {
+            if (!site.category || seedCategories.some((category) => category.id === site.category)) continue;
+            seedCategories.push({
+              id: site.category,
+              label: site.categoryLabel || "未分类",
+              iconKey: "folder",
+              color: "mint",
+            });
+          }
+          setCategories(seedCategories);
+          if (isAuthenticated) {
+            const seedStateResponse = await fetch("/api/state", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                categories: seedCategories,
+                favorites,
+                preferences: {
+                  skin, viewMode, sortMode, showDescriptions, siteName, sidebarCollapsed,
+                  backgroundMode, customBackground, backgroundImage, backgroundImageBlur,
+                  backgroundImageBrightness, backgroundImageContrast, backgroundImageAdaptive,
+                },
+              }),
+            });
+            if (!seedStateResponse.ok) throw new Error("D1 state seed failed");
+          }
+        }
+
+        if (!cancelled) {
+          setCloudStateReady(isAuthenticated);
+          setStorageMode("cloud");
+          setLastSyncedLabel(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+        }
       } catch {
-        if (!cancelled) setStorageMode("local");
+        if (!cancelled) {
+          setCloudStateReady(false);
+          setStorageMode("local");
+        }
       }
     };
-    void syncSites();
+    void syncCloud();
     return () => { cancelled = true; };
-  }, [workspaceId]);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     window.localStorage.setItem("tidal-favorites", JSON.stringify(favorites));
@@ -353,13 +577,109 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
   }, [categories]);
 
   useEffect(() => {
+    if (!cloudStateReady || !isAuthenticated) return;
+    const timer = window.setTimeout(() => {
+      const syncState = async () => {
+        try {
+          const response = await fetch("/api/state", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              categories,
+              favorites,
+              preferences: {
+                skin, viewMode, sortMode, showDescriptions, siteName, sidebarCollapsed,
+                backgroundMode, customBackground, backgroundImage, backgroundImageBlur,
+                backgroundImageBrightness, backgroundImageContrast, backgroundImageAdaptive,
+              },
+            }),
+          });
+          if (!response.ok) throw new Error("D1 state save failed");
+          setStorageMode("cloud");
+          setLastSyncedLabel(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+        } catch {
+          setStorageMode("local");
+        }
+      };
+      void syncState();
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [
+    cloudStateReady, isAuthenticated, categories, favorites, skin, viewMode, sortMode, showDescriptions,
+    siteName, sidebarCollapsed, backgroundMode, customBackground, backgroundImage,
+    backgroundImageBlur, backgroundImageBrightness, backgroundImageContrast, backgroundImageAdaptive,
+  ]);
+
+  useEffect(() => {
+    if (isAuthenticated) return;
+    setEditMode(false);
+    setSettingsOpen(false);
+    setAddOpen(false);
+    setEditingSite(null);
+  }, [isAuthenticated]);
+
+  const openSettings = () => {
+    if (!isAuthenticated) { onLogin(); return; }
+    if (settingsCloseTimerRef.current !== null) {
+      window.clearTimeout(settingsCloseTimerRef.current);
+      settingsCloseTimerRef.current = null;
+    }
+    setSettingsClosing(false);
+    setSettingsOpen(true);
+  };
+
+  const closeSettings = () => {
+    if (settingsCloseTimerRef.current !== null) return;
+    setSettingsClosing(true);
+    settingsCloseTimerRef.current = window.setTimeout(() => {
+      setSettingsOpen(false);
+      setSettingsClosing(false);
+      settingsCloseTimerRef.current = null;
+    }, 320);
+  };
+
+  useEffect(() => () => {
+    if (settingsCloseTimerRef.current !== null) {
+      window.clearTimeout(settingsCloseTimerRef.current);
+    }
+    if (editHintExitTimerRef.current !== null) {
+      window.clearTimeout(editHintExitTimerRef.current);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeCategory === displayedCategory) return;
+
+    categoryTransitionTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    categoryTransitionTimersRef.current = [];
+    setCategoryTransitionPhase("exiting");
+
+    const exitTimer = window.setTimeout(() => {
+      setDisplayedCategory(activeCategory);
+      setCategoryTransitionPhase("entering");
+      const enterTimer = window.setTimeout(() => {
+        setCategoryTransitionPhase("settled");
+        categoryTransitionTimersRef.current = [];
+      }, 650);
+      categoryTransitionTimersRef.current = [enterTimer];
+    }, 180);
+    categoryTransitionTimersRef.current = [exitTimer];
+
+    return () => {
+      categoryTransitionTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      categoryTransitionTimersRef.current = [];
+    };
+  }, [activeCategory]);
+
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "/" && document.activeElement?.tagName !== "INPUT") {
         event.preventDefault();
         searchRef.current?.focus();
       }
       if (event.key === "Escape") {
-        setSettingsOpen(false);
+        if (settingsOpen) closeSettings();
         setAddOpen(false);
         setEditingSite(null);
         setMobileNavOpen(false);
@@ -367,19 +687,39 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [settingsOpen]);
 
   const categoryMeta = useMemo(() => {
     const allCategory = categories.find((category) => category.id === "all");
     return allCategory ? [allCategory, ...categories.filter((category) => category.id !== "all")] : categories;
   }, [categories]);
+
+  useLayoutEffect(() => {
+    const nav = categoryNavRef.current;
+    if (!nav) return;
+
+    const updateScrollCue = () => {
+      const canScrollFurther = nav.scrollHeight - nav.clientHeight - nav.scrollTop > 1;
+      nav.classList.toggle("category-nav-can-scroll", canScrollFurther);
+    };
+    const resizeObserver = new ResizeObserver(updateScrollCue);
+    resizeObserver.observe(nav);
+    const animationFrame = window.requestAnimationFrame(updateScrollCue);
+    nav.addEventListener("scroll", updateScrollCue, { passive: true });
+    return () => {
+      resizeObserver.disconnect();
+      window.cancelAnimationFrame(animationFrame);
+      nav.removeEventListener("scroll", updateScrollCue);
+    };
+  }, [categoryMeta.length, sidebarCollapsed]);
   const categoryNames = useMemo(() => Object.fromEntries(categories.map((category) => [category.id, category.label])) as Record<string, string>, [categories]);
   const contentCategories = useMemo(() => categories.filter((category) => !category.system), [categories]);
   const defaultContentCategoryId = contentCategories[0]?.id || "";
 
   const openAddSite = () => {
+    if (!isAuthenticated) { onLogin(); return; }
     if (!contentCategories.length) {
-      setSettingsOpen(true);
+      openSettings();
       setAddingCategory(true);
       setEditingCategoryId(null);
       setPendingDeleteCategoryId(null);
@@ -396,14 +736,45 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     const normalized = query.trim().toLowerCase();
     const next = sites.filter((site) => {
       const inCategory =
-        activeCategory === "all" ||
-        (activeCategory === "favorites" ? favorites.includes(site.id) : site.category === activeCategory);
+        displayedCategory === "all" ||
+        (displayedCategory === "favorites" ? favorites.includes(site.id) : site.category === displayedCategory);
       const inQuery = !normalized || [site.name, site.description, categoryNames[site.category] || site.categoryLabel, ...site.tags].join(" ").toLowerCase().includes(normalized);
       return inCategory && inQuery;
     });
     if (sortMode === "az") return [...next].sort((a, b) => a.name.localeCompare(b.name));
     return next;
-  }, [activeCategory, categoryNames, favorites, query, sites, sortMode]);
+  }, [displayedCategory, categoryNames, favorites, query, sites, sortMode]);
+  const settingsPreviewSite = filteredSites[0];
+
+  useLayoutEffect(() => {
+    if (!settingsOpen || !settingsPreviewSite) return;
+    const element = Array.from(document.querySelectorAll<HTMLElement>("[data-site-id]"))
+      .find((candidate) => candidate.dataset.siteId === settingsPreviewSite.id);
+    if (!element) return;
+
+    const updatePreviewRect = () => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      setSettingsPreviewRect({
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      });
+    };
+    const resizeObserver = new ResizeObserver(updatePreviewRect);
+    const scrollRoot = document.querySelector<HTMLElement>(".main-content");
+    resizeObserver.observe(element);
+    scrollRoot?.addEventListener("scroll", updatePreviewRect, { passive: true });
+    window.addEventListener("resize", updatePreviewRect);
+    const animationFrame = window.requestAnimationFrame(updatePreviewRect);
+    return () => {
+      resizeObserver.disconnect();
+      scrollRoot?.removeEventListener("scroll", updatePreviewRect);
+      window.removeEventListener("resize", updatePreviewRect);
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [settingsOpen, settingsPreviewSite?.id, viewMode]);
 
   const categoryCounts = useMemo(() => {
     return sites.reduce<Record<string, number>>((acc, site) => {
@@ -444,6 +815,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
   const toggleFavorite = (event: ReactMouseEvent<HTMLButtonElement>, site: Site) => {
     event.preventDefault();
     event.stopPropagation();
+    if (!isAuthenticated) { onLogin(); return; }
     const isFavorite = favorites.includes(site.id);
     setFavorites((current) => (current.includes(site.id) ? current.filter((item) => item !== site.id) : [...current, site.id]));
     toast.success(isFavorite ? `已取消收藏“${site.name}”。` : `已收藏“${site.name}”。`);
@@ -452,15 +824,129 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
   const withSortOrder = (nextSites: Site[]) => nextSites.map((site, index) => ({ ...site, sortOrder: index }));
 
   const persistSites = async (nextSites: Site[]) => {
-    const response = await fetch("/api/sites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-workspace-id": workspaceId },
-      body: JSON.stringify({ sites: withSortOrder(nextSites) }),
-    });
-    const isJson = response.headers.get("content-type")?.includes("application/json") === true;
-    const payload = isJson ? await response.json().catch(() => ({})) as { success?: boolean; error?: string } : {};
-    if (!response.ok || payload.success !== true) throw new Error(payload.error || "云端保存失败。");
+    const orderedSites = withSortOrder(nextSites);
+    for (let index = 0; index < orderedSites.length; index += 50) {
+      const response = await fetch("/api/sites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sites: orderedSites.slice(index, index + 50) }),
+      });
+      const isJson = response.headers.get("content-type")?.includes("application/json") === true;
+      const payload = isJson ? await response.json().catch(() => ({})) as { success?: boolean; error?: string } : {};
+      if (!response.ok || payload.success !== true) throw new Error(payload.error || "云端保存失败。");
+    }
     return true;
+  };
+
+  const exportBookmarks = () => {
+    const payload: BookmarkExport = {
+      format: "liquid-glass-nav",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      categories,
+      sites: withSortOrder(sites),
+      favorites,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const downloadUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = downloadUrl;
+    anchor.download = `tidal-bookmarks-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(downloadUrl);
+    toast.success(`已导出 ${sites.length} 个书签。`);
+  };
+
+  const importBookmarks = async (file?: File) => {
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("导入文件不能超过 8MB。");
+      return;
+    }
+    setImportingBookmarks(true);
+    try {
+      const groups = parseBookmarkFile(await file.text());
+      if (!groups.some((group) => group.bookmarks.length)) throw new Error("没有识别到可导入的书签。");
+
+      const nextCategories = [...categories];
+      const categoryByLabel = new Map(
+        nextCategories.filter((category) => !category.system).map((category) => [category.label.trim().toLocaleLowerCase(), category]),
+      );
+      const knownUrls = new Set(sites.map((site) => normalizeBookmarkUrl(site.url).toLocaleLowerCase()).filter(Boolean));
+      const importedSites: Site[] = [];
+      const importedFavoriteIds: string[] = [];
+      let skipped = 0;
+      let sequence = 0;
+
+      groups.forEach((group) => {
+        const label = (group.label.trim() || "未分类").slice(0, 18);
+        const labelKey = label.toLocaleLowerCase();
+        let category = categoryByLabel.get(labelKey);
+        if (!category) {
+          category = {
+            id: `category-import-${Date.now()}-${sequence++}`,
+            label,
+            iconKey: "folder",
+            color: "blue",
+          };
+          const favoritesIndex = nextCategories.findIndex((item) => item.id === "favorites");
+          nextCategories.splice(favoritesIndex >= 0 ? favoritesIndex : nextCategories.length, 0, category);
+          categoryByLabel.set(labelKey, category);
+        }
+
+        group.bookmarks.forEach((bookmark) => {
+          const url = normalizeBookmarkUrl(bookmark.url);
+          const urlKey = url.toLocaleLowerCase();
+          if (!url || knownUrls.has(urlKey)) {
+            skipped += 1;
+            return;
+          }
+          knownUrls.add(urlKey);
+          let fallbackName = "未命名书签";
+          try { fallbackName = new URL(url).hostname; } catch { /* URL was already validated */ }
+          const name = bookmark.name.trim() || fallbackName;
+          const id = `imported-${Date.now()}-${sequence++}`;
+          importedSites.push({
+            id,
+            name: name.slice(0, 80),
+            url,
+            description: bookmark.description?.trim().slice(0, 240) || "从书签文件导入的入口。",
+            category: category.id,
+            categoryLabel: category.label,
+            icon: (bookmark.icon?.trim() || name.slice(0, 2) || "书").slice(0, 8),
+            iconUrl: bookmark.iconUrl?.trim() || faviconUrl(url),
+            iconTone: "mint",
+            tags: bookmark.tags?.filter(Boolean).slice(0, 8) || [category.label],
+          });
+          if (bookmark.favorite) importedFavoriteIds.push(id);
+        });
+      });
+
+      if (!importedSites.length) {
+        toast.message(skipped ? `没有新增书签，已跳过 ${skipped} 个重复或无效地址。` : "没有可导入的新书签。");
+        return;
+      }
+
+      const nextSites = withSortOrder([...sites, ...importedSites]);
+      setCategories(nextCategories);
+      setSites(nextSites);
+      setFavorites((current) => Array.from(new Set([...current, ...importedFavoriteIds])));
+      setActiveCategory("all");
+
+      let cloudSaved = false;
+      try {
+        await persistSites(nextSites);
+        cloudSaved = true;
+      } catch {
+        // localStorage effects keep the full import available when cloud sync is unavailable.
+      }
+      setStorageMode(cloudSaved ? "cloud" : "local");
+      toast.success(`已导入 ${importedSites.length} 个书签、${nextCategories.length - categories.length} 个分类${skipped ? `，跳过 ${skipped} 个重复或无效地址` : ""}。`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "导入书签失败。");
+    } finally {
+      setImportingBookmarks(false);
+    }
   };
 
   const deleteSite = async (site: Site) => {
@@ -470,7 +956,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     try {
       const response = await fetch("/api/sites", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json", "x-workspace-id": workspaceId },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: site.id }),
       });
       const isJson = response.headers.get("content-type")?.includes("application/json") === true;
@@ -520,8 +1006,9 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     if (target) moveSite(siteId, target.id);
   };
 
-  const beginSiteDrag = (event: React.PointerEvent<HTMLButtonElement>, siteId: string) => {
+  const beginSiteDrag = (event: React.PointerEvent<HTMLElement>, siteId: string) => {
     if (!editMode) return;
+    if ((event.target as HTMLElement).closest("button")) return;
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     draggingSiteIdRef.current = siteId;
@@ -529,7 +1016,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     setDraggingSiteId(siteId);
   };
 
-  const continueSiteDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const continueSiteDrag = (event: React.PointerEvent<HTMLElement>) => {
     const sourceId = draggingSiteIdRef.current;
     if (!sourceId) return;
     const targetElement = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-site-id]");
@@ -549,26 +1036,14 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     setDraggingSiteId(null);
   };
 
-  const beginNativeSiteDrag = (event: ReactDragEvent<HTMLElement>, siteId: string) => {
-    if (!editMode) {
-      event.preventDefault();
-      return;
-    }
-    draggingSiteIdRef.current = siteId;
-    setDraggingSiteId(siteId);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", siteId);
-  };
-
-  const dropNativeSite = (event: ReactDragEvent<HTMLElement>, targetId: string) => {
-    if (!editMode) return;
-    event.preventDefault();
-    const sourceId = draggingSiteIdRef.current || event.dataTransfer.getData("text/plain");
-    if (sourceId) moveSite(sourceId, targetId);
-    endSiteDrag();
-  };
 
   const startEditMode = () => {
+    if (!isAuthenticated) { onLogin(); return; }
+    if (editHintExitTimerRef.current !== null) {
+      window.clearTimeout(editHintExitTimerRef.current);
+      editHintExitTimerRef.current = null;
+    }
+    setEditHintExiting(false);
     setActiveCategory("all");
     setQuery("");
     setSortMode("curated");
@@ -581,6 +1056,11 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     const orderedSites = withSortOrder(sites);
     setSites(orderedSites);
     setEditMode(false);
+    setEditHintExiting(true);
+    editHintExitTimerRef.current = window.setTimeout(() => {
+      setEditHintExiting(false);
+      editHintExitTimerRef.current = null;
+    }, 280);
     setEditingSite(null);
     endSiteDrag();
     if (!orderDirty) return;
@@ -746,7 +1226,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     try {
       const response = await fetch("/api/sites", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-workspace-id": workspaceId },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sites: nextSites }),
       });
       const isJson = response.headers.get("content-type")?.includes("application/json") === true;
@@ -883,7 +1363,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     try {
       const response = await fetch("/api/sites", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-workspace-id": workspaceId },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ site: updatedSite }),
       });
       const isJson = response.headers.get("content-type")?.includes("application/json") === true;
@@ -901,7 +1381,10 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
     }
   };
 
-  const activeLabel = categoryMeta.find((category) => category.id === activeCategory)?.label || "全部入口";
+  const activeLabel = categoryMeta.find((category) => category.id === displayedCategory)?.label || "全部入口";
+  const today = new Date();
+  const todayLabel = `${String(today.getMonth() + 1).padStart(2, "0")}/${String(today.getDate()).padStart(2, "0")} 星期${["日", "一", "二", "三", "四", "五", "六"][today.getDay()]}`;
+
   const effectiveImageBrightness = backgroundImageAdaptive
     ? Math.max(30, Math.round(backgroundImageBrightness * (skin === "dark" ? .72 : 1.04)))
     : backgroundImageBrightness;
@@ -945,7 +1428,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
         </div>
 
         <div className="sidebar-section-label">收进你的工作台</div>
-        <nav className="category-nav" aria-label="网站分类">
+        <nav ref={categoryNavRef} className="category-nav" aria-label="网站分类">
           {categoryMeta.map((category) => {
             const isActive = category.id === activeCategory;
             const count = category.id === "all" ? sites.length : category.id === "favorites" ? favorites.length : categoryCounts[category.id] || 0;
@@ -966,8 +1449,8 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
         </nav>
 
         <div className="sidebar-footer">
-          <div className="sync-status"><span className="status-pulse" /> {storageMode === "cloud" ? "Cloudflare D1 已同步" : storageMode === "connecting" ? "正在连接 D1" : "本地缓存模式"}</div>
-          <p>最后整理于今天 09:42</p>
+          <div className="sync-status"><span className="status-pulse" /> {!isAuthenticated ? `公开只读 · ${sites.length} 个入口` : storageMode === "cloud" ? (sites.length ? `D1 已同步 · ${sites.length} 个入口` : "D1 已连接 · 暂无入口") : storageMode === "connecting" ? "正在连接 D1" : "本地缓存模式"}</div>
+          <p>{lastSyncedLabel ? `最近同步于 ${lastSyncedLabel}` : "等待首次云端同步"}</p>
         </div>
       </aside>
 
@@ -981,15 +1464,21 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
               {skin === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               <span>{skin === "dark" ? "日间" : "夜间"}</span>
             </button>
-            <button className={`topbar-button edit-mode-button ${editMode ? "edit-mode-button-active" : ""}`} onClick={editMode ? finishEditMode : startEditMode} aria-pressed={editMode}>
-              {editMode ? <Check size={16} /> : <Pencil size={15} />}
-              <span>{editMode ? "完成" : "编辑"}</span>
-            </button>
-            <button className="topbar-button topbar-settings" onClick={() => setSettingsOpen(true)}>
-              <Settings2 size={16} />
-              <span>设置</span>
-            </button>
-            <button className="profile-chip profile-logout" onClick={onLogout} aria-label="退出登录" title="退出登录"><span>YU</span><LogOut size={13} /></button>
+            {isAuthenticated && (
+              <>
+                <button className={`topbar-button edit-mode-button ${editMode ? "edit-mode-button-active" : ""}`} onClick={editMode ? finishEditMode : startEditMode} aria-pressed={editMode}>
+                  {editMode ? <Check size={16} /> : <Pencil size={15} />}
+                  <span>{editMode ? "完成" : "编辑"}</span>
+                </button>
+                <button className="topbar-button topbar-settings" onClick={openSettings}>
+                  <Settings2 size={16} />
+                  <span>设置</span>
+                </button>
+              </>
+            )}
+            {isAuthenticated
+              ? <button className="profile-chip profile-logout" onClick={onLogout} aria-label="退出登录" title="退出登录"><span>Admin</span><LogOut size={13} /></button>
+              : <button className="profile-chip profile-logout" onClick={onLogin} aria-label="登录管理" title="登录管理"><span>登录</span><LogIn size={13} /></button>}
           </div>
         </header>
 
@@ -1001,7 +1490,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
             <div className="hero-meta"><span><span className="live-dot" /> {sites.length} 个入口已就绪</span></div>
           </div>
           <div className="hero-visual" aria-hidden="true">
-            <div className="hero-visual-note"><span>THE QUIET WEB</span><strong>01<span>/</span>09</strong></div>
+            <div className="hero-visual-note"><span>THE QUIET WEB</span><strong>{todayLabel}</strong></div>
           </div>
         </section>
 
@@ -1018,62 +1507,58 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
             <p className="section-kicker">CURATED SPACE</p>
             <div className="overview-title-row"><h2>{activeLabel}</h2><span className="result-count">{filteredSites.length.toString().padStart(2, "0")} sites</span></div>
           </div>
-          <button className="add-inline-button" onClick={openAddSite}><Plus size={15} /> 添加入口</button>
+          {isAuthenticated && <button className="add-inline-button" onClick={openAddSite}><Plus size={15} /> 添加入口</button>}
         </section>
 
-        {editMode && (
-          <div className="edit-mode-hint" role="status">
-            <span className="edit-mode-pulse" />
-            <strong>编辑模式</strong>
-            <span>拖动卡片右上角的把手调整顺序，也可修改或删除入口。</span>
-            <button onClick={finishEditMode}><Check size={14} /> 完成</button>
-          </div>
-        )}
+        <div className={`edit-mode-hint-slot ${editMode ? "edit-mode-hint-slot-visible" : ""}`} aria-hidden={!editMode}>
+          {(editMode || editHintExiting) && (
+            <div className={`edit-mode-hint ${editHintExiting ? "edit-mode-hint-exiting" : ""}`} role="status">
+              <span className="edit-mode-pulse" />
+              <strong>编辑模式</strong>
+              <span>按住并拖动整张卡片调整顺序，也可修改或删除入口。</span>
+              <button onClick={finishEditMode} disabled={editHintExiting}><Check size={14} /> 完成</button>
+            </div>
+          )}
+        </div>
 
         <div className="mobile-category-scroll" aria-label="快速分类">
           {categoryMeta.map((category) => <button key={category.id} className={activeCategory === category.id ? "mobile-category-active" : ""} onClick={() => selectCategory(category.id)}>{category.label}</button>)}
         </div>
 
-        <section className={`site-grid grid-${viewMode} ${editMode ? "site-grid-editing" : ""}`} aria-live="polite">
+        <section key={displayedCategory} className={`site-grid grid-${viewMode} ${editMode ? "site-grid-editing" : ""} category-transition-${categoryTransitionPhase}`} aria-live="polite">
           {filteredSites.map((site, index) => {
             const isFavorite = favorites.includes(site.id);
             return (
               <article
                 key={site.id}
                 data-site-id={site.id}
-                draggable={editMode}
-                onDragStart={(event) => beginNativeSiteDrag(event, site.id)}
-                onDragOver={(event) => { if (editMode) event.preventDefault(); }}
-                onDrop={(event) => dropNativeSite(event, site.id)}
-                onDragEnd={endSiteDrag}
+                style={{ "--site-index": Math.min(index, 6) } as CSSProperties}
+                tabIndex={editMode ? 0 : undefined}
+                aria-grabbed={editMode ? draggingSiteId === site.id : undefined}
+                onPointerDown={(event) => beginSiteDrag(event, site.id)}
+                onPointerMove={continueSiteDrag}
+                onPointerUp={endSiteDrag}
+                onPointerCancel={endSiteDrag}
+                onKeyDown={(event) => {
+                  if (!editMode) return;
+                  if (["ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); moveSiteByOffset(site.id, -1); }
+                  if (["ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); moveSiteByOffset(site.id, 1); }
+                }}
                 className={`site-card glass-panel ${site.featured ? "site-card-featured" : ""} ${index === 1 ? "site-card-tall" : ""} ${editMode ? "site-card-editing" : ""} ${draggingSiteId === site.id ? "site-card-dragging" : ""}`}
               >
                 {!editMode && <a className="site-card-link" href={site.url} target="_blank" rel="noreferrer" aria-label={`打开 ${site.name}`} />}
                 <div className="site-card-topline">
                   <SiteIcon site={site} />
-                  {editMode ? (
+                  {isAuthenticated && (editMode ? (
                     <div className="site-edit-controls">
                       <button className="site-edit-button" onClick={() => openSiteEditor(site)} aria-label={`编辑 ${site.name}`} title="编辑入口"><Pencil size={14} /></button>
                       <button className="site-delete-button" onClick={() => void deleteSite(site)} disabled={savingSite} aria-label={`删除 ${site.name}`} title="删除入口"><Trash2 size={14} /></button>
-                      <button
-                        className="site-drag-handle"
-                        onPointerDown={(event) => beginSiteDrag(event, site.id)}
-                        onPointerMove={continueSiteDrag}
-                        onPointerUp={endSiteDrag}
-                        onPointerCancel={endSiteDrag}
-                        onKeyDown={(event) => {
-                          if (["ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); moveSiteByOffset(site.id, -1); }
-                          if (["ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); moveSiteByOffset(site.id, 1); }
-                        }}
-                        aria-label={`拖动 ${site.name} 调整顺序；也可使用方向键`}
-                        title="拖动排序"
-                      ><GripVertical size={15} /></button>
                     </div>
                   ) : (
                     <button type="button" className={`favorite-button ${isFavorite ? "favorite-active" : ""}`} onClick={(event) => toggleFavorite(event, site)} aria-label={isFavorite ? `取消收藏 ${site.name}` : `收藏 ${site.name}`} title={isFavorite ? "取消收藏" : "加入收藏"}>
                       <Bookmark size={16} fill={isFavorite ? "currentColor" : "none"} />
                     </button>
-                  )}
+                  ))}
                 </div>
                 <div className="site-card-content">
                   <div className="site-card-heading"><h3>{site.name}</h3></div>
@@ -1088,7 +1573,11 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
             <div className="empty-state glass-panel">
               <div className="empty-art"><Search size={26} /></div>
               <div><p className="section-kicker">NO SIGNAL / 00</p><h3>{activeCategory === "favorites" && !query ? "还没有收藏任何入口" : !sites.length && !query ? "还没有添加任何入口" : "还没有找到这个入口"}</h3><p>{activeCategory === "favorites" && !query ? "点击任意卡片右上角的书签，就能在这里快速找到它。" : !sites.length && !query ? "先创建一个分类，再添加你的第一个网站。" : "换个关键词试试，或者把它添加到你的导航里。"}</p></div>
-              {activeCategory === "favorites" && !query ? <button className="primary-button" onClick={() => selectCategory("all")}><Grid2X2 size={15} /> 浏览全部入口</button> : <button className="primary-button" onClick={openAddSite}><Plus size={15} /> {contentCategories.length ? "添加网站" : "创建分类"}</button>}
+              {activeCategory === "favorites" && !query
+                ? <button className="primary-button" onClick={() => selectCategory("all")}><Grid2X2 size={15} /> 浏览全部入口</button>
+                : isAuthenticated
+                  ? <button className="primary-button" onClick={openAddSite}><Plus size={15} /> {contentCategories.length ? "添加网站" : "创建分类"}</button>
+                  : <button className="primary-button" onClick={onLogin}><LogIn size={15} /> 登录后管理</button>}
             </div>
           )}
         </section>
@@ -1103,16 +1592,32 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
         </div>
       </main>
 
-      {settingsOpen && (
-        <div className="drawer-layer" role="dialog" aria-modal="true" aria-label="导航设置">
-          <button className="drawer-backdrop" onClick={() => setSettingsOpen(false)} aria-label="关闭设置" />
+      {settingsOpen && isAuthenticated && (
+        <div className={`drawer-layer ${settingsClosing ? "drawer-layer-closing" : ""}`} role="dialog" aria-modal="true" aria-label="导航设置">
+          <button className="drawer-backdrop" onClick={closeSettings} aria-label="关闭设置" />
+          {settingsPreviewSite && settingsPreviewRect && (
+            <div
+              className={`settings-site-preview-frame grid-${viewMode}`}
+              style={{ left: settingsPreviewRect.left, top: settingsPreviewRect.top, width: settingsPreviewRect.width, height: settingsPreviewRect.height }}
+              aria-hidden="true"
+            >
+              <article className={`site-card glass-panel ${settingsPreviewSite.featured ? "site-card-featured" : ""}`}>
+                <div className="site-card-topline">
+                  <SiteIcon site={settingsPreviewSite} />
+                  <span className={`favorite-button ${favorites.includes(settingsPreviewSite.id) ? "favorite-active" : ""}`}><Bookmark size={16} fill={favorites.includes(settingsPreviewSite.id) ? "currentColor" : "none"} /></span>
+                </div>
+                <div className="site-card-content"><div className="site-card-heading"><h3>{settingsPreviewSite.name}</h3></div>{showDescriptions && <p>{settingsPreviewSite.description}</p>}</div>
+                <div className="site-card-bottom"><div className="tag-list">{settingsPreviewSite.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><span className="category-label">{categoryNames[settingsPreviewSite.category]?.trim() || settingsPreviewSite.categoryLabel}</span></div>
+              </article>
+            </div>
+          )}
           <aside className="settings-drawer">
-            <div className="drawer-header"><div><p className="section-kicker">PERSONALIZE / 02</p><h2>导航设置</h2></div><button className="drawer-close" onClick={() => setSettingsOpen(false)} aria-label="关闭设置"><X size={18} /></button></div>
+            <div className="drawer-header"><div><p className="section-kicker">PERSONALIZE / 02</p><h2>导航设置</h2></div><button className="drawer-close" onClick={closeSettings} aria-label="关闭设置"><X size={18} /></button></div>
             <div className="drawer-content">
-              <section className="setting-section"><label className="setting-label">工作台名称</label><input className="setting-input" value={siteName} onChange={(event) => setSiteName(event.target.value)} /><p className="setting-hint">只在你的设备本地保存。</p></section>
+              <section className="setting-section"><label className="setting-label">工作台名称</label><input className="setting-input" value={siteName} onChange={(event) => setSiteName(event.target.value)} /><p className="setting-hint">将同步到使用同一站点密码登录的设备。</p></section>
               <section className="setting-section"><label className="setting-label">界面外观</label><div className="segmented-control"><button className={skin === "dark" ? "segment-active" : ""} onClick={() => setSkin("dark")}><Moon size={14} /> 深色石墨</button><button className={skin === "light" ? "segment-active" : ""} onClick={() => setSkin("light")}><Sun size={14} /> 雾白模式</button></div></section>
               <section className="setting-section background-setting">
-                <div className="setting-row"><div><label className="setting-label">页面背景</label><p className="setting-hint">底色和背景图片仅保存在当前设备。</p></div><span className="background-status">{backgroundImage ? "图片" : backgroundMode === "custom" ? "自定义" : "预设"}</span></div>
+                <div className="setting-row"><div><label className="setting-label">页面背景</label><p className="setting-hint">底色和背景图片也会同步到其他设备。</p></div><span className="background-status">{backgroundImage ? "图片" : backgroundMode === "custom" ? "自定义" : "预设"}</span></div>
                 <div className="background-options">
                   <button type="button" className={`background-option background-option-mist ${backgroundMode === "mist" ? "background-option-active" : ""}`} onClick={() => setBackgroundMode("mist")}><span /><strong>雾白</strong><small>中性留白</small></button>
                   <button type="button" className={`background-option background-option-blue ${backgroundMode === "blue" ? "background-option-active" : ""}`} onClick={() => setBackgroundMode("blue")}><span /><strong>静谧蓝</strong><small>系统蓝光</small></button>
@@ -1193,17 +1698,37 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
                   })}
                 </div>
               </section>
+              <section className="setting-section bookmark-transfer-settings">
+                <div className="setting-row">
+                  <div><label className="setting-label">书签数据</label><p className="setting-hint">兼容本站和 WeTab 的 JSON 文件；导入时保留现有内容并按网址去重。</p></div>
+                  <span className="bookmark-transfer-count">{sites.length} 个</span>
+                </div>
+                <input
+                  ref={bookmarkImportRef}
+                  className="bookmark-import-input"
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={(event) => {
+                    void importBookmarks(event.target.files?.[0]);
+                    event.target.value = "";
+                  }}
+                />
+                <div className="bookmark-transfer-actions">
+                  <button type="button" onClick={exportBookmarks}><Download size={14} /> 导出书签</button>
+                  <button type="button" onClick={() => bookmarkImportRef.current?.click()} disabled={importingBookmarks}><Upload size={14} /> {importingBookmarks ? "导入中…" : "导入书签"}</button>
+                </div>
+              </section>
               <section className="setting-section"><label className="setting-label">入口模块大小</label><div className="segmented-control"><button className={viewMode === "comfortable" ? "segment-active" : ""} onClick={() => setViewMode("comfortable")}><Grid2X2 size={14} /> 舒适</button><button className={viewMode === "dense" ? "segment-active" : ""} onClick={() => setViewMode("dense")}><LayoutList size={14} /> 紧凑</button><button className={viewMode === "icon" ? "segment-active" : ""} onClick={() => setViewMode("icon")}><Grid3X3 size={14} /> 小图标</button></div><p className="setting-hint">小图标模式仅显示图标、标题和分类。</p></section>
               <section className="setting-section"><label className="setting-label">入口排序</label><div className="select-wrap"><select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}><option value="curated">编辑精选顺序</option><option value="az">按名称排列</option></select><ChevronRight size={15} /></div></section>
               <section className="setting-section"><div className="setting-row"><div><label className="setting-label">显示描述</label><p className="setting-hint">在网站卡片下显示一句简介。</p></div><button className={`toggle ${showDescriptions ? "toggle-on" : ""}`} onClick={() => setShowDescriptions(!showDescriptions)} aria-label="切换网站描述"><span /></button></div></section>
-              <section className="setting-preview"><div className="preview-image" /><div><p className="section-kicker">MATERIAL NOTE</p><h3>玻璃的透明度，给内容留出呼吸。</h3><p>所有偏好只影响当前设备，不会上传。</p></div></section>
+              <section className="setting-preview"><div className="preview-image" /><div><p className="section-kicker">MATERIAL NOTE</p><h3>玻璃的透明度，给内容留出呼吸。</h3><p>分类、收藏和界面偏好会通过 D1 跨设备同步。</p></div></section>
             </div>
-            <div className="drawer-footer"><button className="secondary-button" onClick={() => { setFavorites([]); toast.success("收藏已清空"); }}>清空收藏</button><button className="primary-button" onClick={() => setSettingsOpen(false)}><Check size={15} /> 保存并返回</button></div>
+            <div className="drawer-footer"><button className="secondary-button" onClick={() => { setFavorites([]); toast.success("收藏已清空"); }}>清空收藏</button><button className="primary-button" onClick={closeSettings}><Check size={15} /> 保存并返回</button></div>
           </aside>
         </div>
       )}
 
-      {editingSite && editMode && (
+      {editingSite && editMode && isAuthenticated && (
         <div className="modal-layer" role="dialog" aria-modal="true" aria-label={`编辑 ${editingSite.name}`}>
           <button className="drawer-backdrop" onClick={() => setEditingSite(null)} aria-label="关闭编辑窗口" />
           <form className="add-modal edit-site-modal glass-panel" onSubmit={submitEditedSite}>
@@ -1225,7 +1750,7 @@ export default function Home({ onLogout }: { onLogout: () => void }) {
         </div>
       )}
 
-      {addOpen && (
+      {addOpen && isAuthenticated && (
         <div className="modal-layer" role="dialog" aria-modal="true" aria-label="添加网站">
           <button className="drawer-backdrop" onClick={() => { setAddOpen(false); setAnalysisSource(null); }} aria-label="关闭添加窗口" />
           <form className="add-modal glass-panel" onSubmit={submitNewSite}>

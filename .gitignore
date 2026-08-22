@@ -105,3 +105,7 @@ temp/
 *.sqlite
 *.sqlite3
 .wrangler/
+
+downloaded_images
+download_icons.py
+wetab-2026-8-21.data.json

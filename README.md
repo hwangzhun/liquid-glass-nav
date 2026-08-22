@@ -12,11 +12,17 @@
 - 自定义背景颜色、背景图片、模糊度、亮度和对比度
 - 自动读取网站 favicon，也可上传自定义图标
 - AI 自动生成网站名称、简介、分类和标签
-- 单密码登录保护，登录状态通过 `HttpOnly` Cookie 保存 30 天
+- 支持公开只读浏览，使用单一密码进入管理模式，登录状态通过 `HttpOnly` Cookie 保存 30 天
 - D1 云端存储，浏览器 `localStorage` 作为缓存和离线降级
 - 首次部署默认为空数据，由用户自行创建分类和入口
 
 ## 更新日志
+
+### 2026-08-23 V1.0.4
+
+- 支持未登录只读浏览，登录后进行管理
+- 修复不同设备之间入口数据不一致的问题
+- 分类、收藏和界面偏好支持通过 Cloudflare D1 同步
 
 ### 2026-08-20 V1.0.2
 
@@ -54,6 +60,7 @@ client/                 React 前端
 functions/api/          Cloudflare Pages Functions API
   auth.ts               登录、会话检查和退出
   sites.ts              D1 网站读取与写入
+  state.ts              D1 分类、收藏与界面偏好同步
   analyze-site.ts       AI 网站信息分析
 migrations/             D1 数据库迁移
 shared/                 前后端共享逻辑
@@ -266,7 +273,7 @@ npx wrangler d1 migrations apply liquid-glass-nav-db --local
 
 ## 数据说明
 
-`sites` 表以 `workspace_id` 和 `id` 作为联合主键。每个浏览器会在本地生成一个匿名 workspace ID，并通过 `x-workspace-id` 请求头读写自己的导航数据。
+`sites` 表以 `workspace_id` 和 `id` 作为联合主键。私人站点使用由登录会话保护的固定工作区 `private-default`，因此通过同一站点密码登录的设备会读取同一份数据。升级后首次读取为空时，旧版匿名工作区中的入口会自动合并到该主工作区。
 
 D1 保存：
 
@@ -275,8 +282,11 @@ D1 保存：
 - 图标与图标样式
 - 网站标签
 - 推荐状态和排序顺序
+- 自定义分类与分类顺序
+- 收藏
+- 工作台名称、主题、背景和布局偏好
 
-目前收藏、主题、背景和部分界面偏好仍保存在浏览器 `localStorage` 中。清除浏览器站点数据会生成新的 workspace ID，因此可能看不到旧 workspace 下的网站记录。
+浏览器 `localStorage` 仅作为缓存和离线降级。清除某台设备的浏览器数据不会改变 D1 主数据；重新登录后会再次从云端加载。部署此版本前必须应用 `0005_shared_workspace_state.sql` 迁移。
 
 ## 常用命令
 

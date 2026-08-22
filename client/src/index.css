@@ -393,6 +393,19 @@ a {
   cursor: not-allowed;
   opacity: 0.52;
 }
+.login-view-button {
+  width: 100%;
+  min-height: 40px;
+  border-color: rgba(60, 60, 67, 0.14);
+  border-radius: 12px;
+  color: #6e6e73;
+  background: rgba(255, 255, 255, 0.5);
+}
+.login-view-button:hover {
+  color: #1d1d1f;
+  border-color: rgba(60, 60, 67, 0.22);
+  background: rgba(255, 255, 255, 0.75);
+}
 .login-cookie-note {
   display: flex;
   align-items: center;
@@ -734,11 +747,11 @@ a {
 }
 .category-icon {
   display: grid;
-  flex: 0 0 24px;
+  flex: 0 0 26px;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
 }
 .icon-mint {
   color: var(--mint);
@@ -964,7 +977,7 @@ a {
 .hero-section {
   position: relative;
   display: flex;
-  min-height: 257px;
+  min-height: 300px;
   margin: 39px 0 25px;
   overflow: hidden;
   border-bottom: 1px solid var(--line);
@@ -1337,6 +1350,9 @@ a {
 }
 .site-card {
   position: relative;
+  isolation: isolate;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 210px;
   display: flex;
   aspect-ratio: 1 / 1;
   min-height: 0;
@@ -1678,9 +1694,9 @@ a {
   inset: 0;
   width: 100%;
   height: 100%;
-  background: rgba(3, 10, 16, 0.6);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
+  background: rgba(3, 10, 16, 0.5);
+  backdrop-filter: blur(12px) saturate(85%);
+  -webkit-backdrop-filter: blur(12px) saturate(85%);
   animation: fade-in 180ms ease-out both;
 }
 .settings-drawer {
@@ -1700,6 +1716,46 @@ a {
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);
   animation: drawer-in 280ms var(--ease-out) both;
+}
+.settings-site-preview-frame {
+  position: fixed;
+  z-index: 2;
+  pointer-events: none;
+  transform-origin: center;
+  transition:
+    left 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    top 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: settings-preview-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.settings-site-preview-frame .site-card {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  content-visibility: visible;
+  animation: none !important;
+  transform: none !important;
+  transition: none;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 24px 64px rgba(0, 0, 0, 0.24);
+}
+.settings-site-preview-frame .favorite-button {
+  display: grid;
+}
+.settings-drawer {
+  z-index: 3;
+}
+@keyframes settings-preview-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 .skin-light .settings-drawer {
   background: linear-gradient(
@@ -1760,6 +1816,45 @@ a {
   color: var(--text-faint);
   font-size: var(--type-label);
   line-height: 1.5;
+}
+.bookmark-import-input {
+  display: none;
+}
+.bookmark-transfer-count {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 1px solid var(--settings-border, var(--line));
+  border-radius: 999px;
+  color: var(--text-faint);
+  font-size: var(--type-label);
+  background: var(--settings-surface, rgba(255, 255, 255, 0.045));
+}
+.bookmark-transfer-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 14px;
+}
+.bookmark-transfer-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  border: 1px solid var(--settings-border, var(--line));
+  border-radius: 10px;
+  color: var(--text-soft);
+  background: var(--settings-surface, rgba(255, 255, 255, 0.045));
+  transition: 160ms var(--ease-out);
+}
+.bookmark-transfer-actions button:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--settings-border-strong, var(--line-bright));
+  background: var(--settings-surface-hover, rgba(255, 255, 255, 0.09));
+}
+.bookmark-transfer-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 .setting-input,
 .select-wrap select,
@@ -2316,11 +2411,21 @@ a {
 .edit-mode-button {
   border: 1px solid transparent;
 }
-.edit-mode-button-active {
-  border-color: rgba(10, 132, 255, 0.38);
-  color: #64d2ff;
-  background: rgba(10, 132, 255, 0.13);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+.topbar-button.edit-mode-button-active {
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #fff;
+  background: linear-gradient(180deg, #168cff, #0071e3);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.36);
+}
+.topbar-button.edit-mode-button-active:hover {
+  border-color: rgba(255, 255, 255, 0.34);
+  color: #fff;
+  background: linear-gradient(180deg, #168cff, #0071e3);
+  filter: brightness(1.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 8px 15px rgba(0, 113, 227, 0.2);
+  transform: translateY(-1px);
 }
 .edit-mode-hint {
   display: flex;
@@ -2377,14 +2482,16 @@ a {
 }
 
 .site-grid-editing .site-card {
-  cursor: default;
+  cursor: grab;
   transform-origin: 50% 50%;
-  will-change: transform, rotate, translate, scale;
-  animation: editing-wiggle 360ms ease-in-out infinite alternate;
+  user-select: none;
+  animation: none;
+  background: rgba(28, 28, 30, 0.58);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
-.site-grid-editing .site-card:nth-child(even) {
-  animation-direction: alternate-reverse;
-  animation-delay: -180ms;
+.skin-light .site-grid-editing .site-card {
+  background: rgba(255, 255, 255, 0.72);
 }
 .site-grid-editing .site-card:hover:not(.site-card-dragging) {
   scale: 1.012;
@@ -2394,11 +2501,13 @@ a {
 }
 .site-card-dragging {
   z-index: 8;
+  cursor: grabbing;
   border-color: rgba(100, 210, 255, 0.72) !important;
   opacity: 0.96;
   translate: 0 -6px;
   rotate: -1.15deg;
   scale: 1.055;
+  will-change: transform, rotate, translate, scale;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.42),
     0 28px 70px rgba(0, 0, 0, 0.34),
@@ -2407,15 +2516,23 @@ a {
   animation: none !important;
 }
 .site-edit-controls {
-  position: relative;
-  z-index: 4;
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  pointer-events: auto;
+  z-index: 20;
   display: inline-flex;
   align-items: center;
   gap: 5px;
 }
+.grid-icon.site-grid-editing .site-edit-controls {
+  top: 12px;
+  right: 12px;
+  flex-direction: column;
+}
+
 .site-edit-button,
-.site-delete-button,
-.site-drag-handle {
+.site-delete-button {
   display: grid;
   place-items: center;
   width: 28px;
@@ -2423,15 +2540,12 @@ a {
   border: 1px solid rgba(255, 255, 255, 0.28);
   border-radius: 9px;
   color: var(--text);
-  background: rgba(12, 12, 15, 0.48);
+  background: rgba(12, 12, 15, 0.82);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.17),
     0 6px 16px rgba(0, 0, 0, 0.16);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
 }
-.site-edit-button:hover,
-.site-drag-handle:hover {
+.site-edit-button:hover {
   border-color: rgba(100, 210, 255, 0.55);
   color: #64d2ff;
   background: rgba(10, 132, 255, 0.18);
@@ -2445,16 +2559,8 @@ a {
   cursor: wait;
   opacity: 0.5;
 }
-.site-drag-handle {
-  cursor: grab;
-  touch-action: none;
-}
-.site-drag-handle:active {
-  cursor: grabbing;
-}
 .skin-light .site-edit-button,
-.skin-light .site-delete-button,
-.skin-light .site-drag-handle {
+.skin-light .site-delete-button {
   border-color: rgba(255, 255, 255, 0.85);
   color: #1d1d1f;
   background: rgba(255, 255, 255, 0.64);
@@ -4115,9 +4221,9 @@ select:focus-visible {
 .sidebar {
   overflow: hidden;
   transition:
-    flex-basis 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    padding 260ms cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 220ms ease;
+    flex-basis 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 360ms ease;
 }
 .sidebar-topline,
 .brand-lockup,
@@ -4127,9 +4233,9 @@ select:focus-visible {
 .sync-status,
 .sidebar-footer {
   transition:
-    opacity 170ms ease,
-    visibility 170ms ease,
-    margin 260ms cubic-bezier(0.22, 1, 0.36, 1);
+    opacity 300ms ease,
+    visibility 300ms ease,
+    margin 460ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .category-link:hover {
   transform: none;
@@ -4141,6 +4247,57 @@ select:focus-visible {
   transform: scale(0.96);
 }
 @media (min-width: 781px) {
+  .app-shell {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .main-content {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+  .sidebar {
+    position: sticky;
+    top: 12px;
+    align-self: flex-start;
+    height: calc(100vh - 24px);
+    height: calc(100dvh - 24px);
+    min-height: 0;
+    max-height: calc(100dvh - 24px);
+  }
+  .category-nav {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    transition: mask-image 160ms ease, -webkit-mask-image 160ms ease;
+  }
+  .category-nav-can-scroll {
+    mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 30px), transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 30px), transparent 100%);
+    mask-mode: alpha;
+  }
+  .category-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .search-panel {
+    position: sticky;
+    top: 12px;
+    isolation: isolate;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+    will-change: transform;
+    z-index: 25;
+    backdrop-filter: blur(28px) saturate(155%);
+    -webkit-backdrop-filter: blur(28px) saturate(155%);
+  }
   .sidebar-collapsed .brand-lockup > div:nth-child(2),
   .sidebar-collapsed .category-link > span:not(.category-icon),
   .sidebar-collapsed .category-link small,
@@ -4149,12 +4306,10 @@ select:focus-visible {
     transform: none;
   }
   .sidebar.sidebar-collapsed .sidebar-footer {
-    display: block;
-    opacity: 0;
-    visibility: hidden;
-    pointer-events: none;
+    display: none;
   }
 }
+
 
 /* Keep the collection and footer resting at the bottom without overlaying content. */
 .main-content {
@@ -4279,5 +4434,309 @@ select:focus-visible {
   input[type="checkbox"]:not(:disabled),
   input[type="radio"]:not(:disabled) {
     @apply cursor-pointer;
+  }
+}
+
+
+/* Preserve sidebar label geometry while the rail eases closed. */
+.brand-lockup > div:nth-child(2),
+.sidebar-section-label,
+.category-link > span:not(.category-icon),
+.category-link small {
+  position: static;
+  max-width: 180px;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  transition:
+    opacity 300ms ease 140ms,
+    max-width 480ms cubic-bezier(0.22, 1, 0.36, 1) 30ms,
+    transform 440ms cubic-bezier(0.22, 1, 0.36, 1) 60ms,
+    visibility 0s linear 90ms;
+}
+.category-link small {
+  max-width: 42px;
+}
+.category-link {
+  transition:
+    padding 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    gap 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 220ms ease,
+    border-color 220ms ease;
+}
+@media (min-width: 781px) {
+  .sidebar.sidebar-collapsed .category-link {
+    justify-content: flex-start;
+    gap: 0;
+    padding: 0 13px;
+  }
+  .sidebar.sidebar-collapsed .brand-lockup > div:nth-child(2),
+  .sidebar.sidebar-collapsed .sidebar-section-label,
+  .sidebar.sidebar-collapsed .category-link > span:not(.category-icon),
+  .sidebar.sidebar-collapsed .category-link small {
+    position: static;
+    max-width: 0;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(-6px);
+    transition:
+      opacity 260ms ease 90ms,
+      max-width 480ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 440ms cubic-bezier(0.22, 1, 0.36, 1),
+      visibility 0s linear 440ms;
+  }
+}
+
+/* Edit controls share the icon's top edge and stay above all card content. */
+.site-edit-controls {
+  z-index: 20;
+}
+.site-edit-button,
+.site-delete-button {
+  position: relative;
+  z-index: 21;
+}
+
+/* Let the settings surface and isolated preview leave as deliberately as they enter. */
+.drawer-layer-closing .drawer-backdrop {
+  animation: fade-out 260ms ease-in forwards;
+}
+.drawer-layer-closing .settings-drawer {
+  animation: drawer-out 320ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+.drawer-layer-closing .settings-site-preview-frame {
+  animation: settings-preview-out 240ms ease-in forwards;
+}
+@keyframes drawer-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(42px);
+  }
+}
+@keyframes fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes settings-preview-out {
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+
+/* Animate the sidebar status block in both directions instead of removing it from layout. */
+.sidebar-footer {
+  display: block;
+  max-height: 112px;
+  overflow: hidden;
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  transition:
+    max-height 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 280ms ease 140ms,
+    transform 440ms cubic-bezier(0.22, 1, 0.36, 1) 60ms,
+    border-color 260ms ease,
+    visibility 0s linear 90ms;
+}
+@media (min-width: 781px) {
+  .sidebar.sidebar-collapsed .sidebar-footer {
+    display: block;
+    max-height: 0;
+    min-height: 0;
+    padding-top: 0;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(14px);
+    border-top-color: transparent;
+    transition:
+      max-height 480ms cubic-bezier(0.22, 1, 0.36, 1),
+      padding 480ms cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 220ms ease,
+      transform 400ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 220ms ease,
+      visibility 0s linear 440ms;
+  }
+  .sidebar.sidebar-collapsed .sidebar-footer .sync-status,
+  .sidebar.sidebar-collapsed .sidebar-footer > p {
+    position: static;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Anchor edit actions to the same top row as the entry icon. */
+.site-card-editing .site-card-topline {
+  position: relative;
+  z-index: 20;
+}
+.site-card-editing .site-edit-controls,
+.grid-icon.site-grid-editing .site-edit-controls {
+  top: 0;
+  right: 0;
+}
+
+/* Category changes have a short exit followed by a staggered, eased entrance. */
+.site-grid.category-transition-exiting {
+  pointer-events: none;
+  animation: category-grid-out 180ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+.site-grid.category-transition-entering {
+  animation: category-grid-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.site-grid.category-transition-entering .site-card {
+  animation: category-card-in 440ms cubic-bezier(0.22, 1, 0.36, 1) backwards !important;
+  animation-delay: calc(var(--site-index, 0) * 32ms) !important;
+}
+.site-grid.category-transition-exiting .site-card,
+.site-grid.category-transition-settled .site-card {
+  animation: none !important;
+}
+@keyframes category-grid-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(7px) scale(0.995);
+  }
+}
+@keyframes category-grid-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes category-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
+/* Edit mode becomes a focused foreground plane while surrounding content recedes. */
+.sidebar,
+.hero-section,
+.search-panel,
+.overview-row,
+.workspace-bottom {
+  transition:
+    filter 520ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 420ms ease;
+}
+.sidebar {
+  transition:
+    flex-basis 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    padding 480ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 360ms ease,
+    filter 520ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 420ms ease;
+}
+.app-editing .sidebar,
+.app-editing .hero-section,
+.app-editing .search-panel,
+.app-editing .overview-row,
+.app-editing .workspace-bottom {
+  filter: blur(3.5px);
+  opacity: 0.56;
+}
+.app-editing .edit-mode-hint,
+.app-editing .site-grid-editing {
+  position: relative;
+  z-index: 32;
+  isolation: isolate;
+}
+.app-editing .edit-mode-hint {
+  background: rgba(18, 28, 38, 0.82);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 18px 46px rgba(0, 0, 0, 0.2);
+  animation: edit-hint-focus-in 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.skin-light.app-editing .edit-mode-hint {
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 18px 46px rgba(64, 83, 110, 0.16);
+}
+.site-grid {
+  translate: 0 0;
+  transition: translate 520ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.app-editing .site-grid-editing {
+  translate: 0 -6px;
+}
+@keyframes edit-hint-focus-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+
+/* Reserve edit-hint space progressively so the list never jumps when the hint mounts. */
+.edit-mode-hint-slot {
+  max-height: 0;
+  margin: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition:
+    max-height 540ms cubic-bezier(0.16, 1, 0.3, 1),
+    margin 540ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 260ms ease;
+}
+.edit-mode-hint-slot-visible {
+  max-height: 56px;
+  margin: -8px 0 18px;
+  overflow: visible;
+  opacity: 1;
+}
+.edit-mode-hint-slot .edit-mode-hint {
+  margin: 0;
+}
+@media (max-width: 780px) {
+  .edit-mode-hint-slot-visible {
+    max-height: 120px;
+  }
+}
+
+
+/* Keep the edit hint mounted briefly so its exit reads before the slot closes. */
+.edit-mode-hint.edit-mode-hint-exiting {
+  pointer-events: none;
+  animation: edit-hint-focus-out 280ms cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+.edit-mode-hint-exiting button {
+  pointer-events: none;
+}
+@keyframes edit-hint-focus-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-7px) scale(0.985);
   }
 }
