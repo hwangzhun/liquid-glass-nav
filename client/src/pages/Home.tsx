@@ -33,13 +33,24 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { CSSProperties, DragEvent as ReactDragEvent, FormEvent, MouseEvent as ReactMouseEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  CSSProperties,
+  DragEvent as ReactDragEvent,
+  FormEvent,
+  MouseEvent as ReactMouseEvent,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { flushSync } from "react-dom";
 import packageJson from "../../../package.json";
 import { toast } from "sonner";
 
 type CategoryId = string;
 type SortMode = "curated" | "az";
-type ViewMode = "comfortable" | "dense" | "icon";
+type ViewMode = "large" | "medium" | "small" | "mini";
 type BackgroundMode = "mist" | "blue" | "midnight" | "custom";
 type AnalysisSource = "ai" | "local";
 
@@ -86,6 +97,8 @@ type Site = {
   categoryLabel: string;
   icon: string;
   iconUrl?: string;
+  iconScale?: number;
+  iconBackground?: string;
   iconTone: string;
   tags: string[];
   featured?: boolean;
@@ -145,8 +158,20 @@ const categoryIconOptions: { key: CategoryIconKey; label: string }[] = [
 ];
 
 const defaultCategoryMeta: Category[] = [
-  { id: "all", label: "全部入口", iconKey: "grid", color: "mint", system: true },
-  { id: "favorites", label: "我的收藏", iconKey: "bookmark", color: "rose", system: true },
+  {
+    id: "all",
+    label: "全部入口",
+    iconKey: "grid",
+    color: "mint",
+    system: true,
+  },
+  {
+    id: "favorites",
+    label: "我的收藏",
+    iconKey: "bookmark",
+    color: "rose",
+    system: true,
+  },
 ];
 
 const categoryLabelMap: Record<string, string> = {
@@ -165,6 +190,20 @@ function readLocal<T>(key: string, fallback: T): T {
   }
 }
 
+function normalizeViewMode(value: unknown): ViewMode {
+  if (
+    value === "large" ||
+    value === "medium" ||
+    value === "small" ||
+    value === "mini"
+  )
+    return value;
+  if (value === "comfortable") return "large";
+  if (value === "dense") return "medium";
+  if (value === "icon") return "small";
+  return "large";
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -172,36 +211,54 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function normalizeBookmarkUrl(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
-  const candidate = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const candidate = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : `https://${trimmed}`;
   try {
     const parsed = new URL(candidate);
-    return ["http:", "https:"].includes(parsed.protocol) ? parsed.toString() : "";
+    return ["http:", "https:"].includes(parsed.protocol)
+      ? parsed.toString()
+      : "";
   } catch {
     return "";
   }
 }
 
 function decodeJsonString(value: string) {
-  try { return JSON.parse(`"${value}"`) as string; } catch { return value; }
+  try {
+    return JSON.parse(`"${value}"`) as string;
+  } catch {
+    return value;
+  }
 }
 
 function parseLooseWetabBookmarks(text: string): ImportedBookmarkGroup[] {
-  const headers = Array.from(text.matchAll(/"id"\s*:\s*"category-[^"]+"[\s\S]*?"name"\s*:\s*"((?:\\.|[^"\\])*)"[\s\S]*?"children"\s*:\s*\[/g));
-  const objectPattern = /\{[^{}]*"name"\s*:\s*"(?:\\.|[^"\\])*"[^{}]*"url"\s*:\s*"(?:\\.|[^"\\])*"[^{}]*\}/g;
-  const parseSegment = (segment: string) => Array.from(segment.matchAll(objectPattern)).flatMap((match) => {
-    try {
-      const item = JSON.parse(match[0]) as Record<string, unknown>;
-      if (typeof item.name !== "string" || typeof item.url !== "string") return [];
-      return [{
-        name: item.name.trim(),
-        url: item.url,
-        iconUrl: typeof item.bgImage === "string" ? item.bgImage : undefined,
-        icon: typeof item.bgText === "string" ? item.bgText : undefined,
-      } satisfies ImportedBookmark];
-    } catch {
-      return [];
-    }
-  });
+  const headers = Array.from(
+    text.matchAll(
+      /"id"\s*:\s*"category-[^"]+"[\s\S]*?"name"\s*:\s*"((?:\\.|[^"\\])*)"[\s\S]*?"children"\s*:\s*\[/g
+    )
+  );
+  const objectPattern =
+    /\{[^{}]*"name"\s*:\s*"(?:\\.|[^"\\])*"[^{}]*"url"\s*:\s*"(?:\\.|[^"\\])*"[^{}]*\}/g;
+  const parseSegment = (segment: string) =>
+    Array.from(segment.matchAll(objectPattern)).flatMap(match => {
+      try {
+        const item = JSON.parse(match[0]) as Record<string, unknown>;
+        if (typeof item.name !== "string" || typeof item.url !== "string")
+          return [];
+        return [
+          {
+            name: item.name.trim(),
+            url: item.url,
+            iconUrl:
+              typeof item.bgImage === "string" ? item.bgImage : undefined,
+            icon: typeof item.bgText === "string" ? item.bgText : undefined,
+          } satisfies ImportedBookmark,
+        ];
+      } catch {
+        return [];
+      }
+    });
 
   const groups: ImportedBookmarkGroup[] = [];
   const firstHeaderIndex = headers[0]?.index ?? text.length;
@@ -211,36 +268,70 @@ function parseLooseWetabBookmarks(text: string): ImportedBookmarkGroup[] {
     const start = (header.index ?? 0) + header[0].length;
     const end = headers[index + 1]?.index ?? text.length;
     const bookmarks = parseSegment(text.slice(start, end));
-    if (bookmarks.length) groups.push({ label: decodeJsonString(header[1]).trim() || "未分类", bookmarks });
+    if (bookmarks.length)
+      groups.push({
+        label: decodeJsonString(header[1]).trim() || "未分类",
+        bookmarks,
+      });
   });
   return groups;
 }
 
 function parseBookmarkFile(text: string): ImportedBookmarkGroup[] {
   let parsed: unknown;
-  try { parsed = JSON.parse(text.replace(/^\uFEFF/, "")); } catch { return parseLooseWetabBookmarks(text); }
+  try {
+    parsed = JSON.parse(text.replace(/^\uFEFF/, ""));
+  } catch {
+    return parseLooseWetabBookmarks(text);
+  }
 
-  if (isRecord(parsed) && parsed.format === "liquid-glass-nav" && Array.isArray(parsed.sites)) {
+  if (
+    isRecord(parsed) &&
+    parsed.format === "liquid-glass-nav" &&
+    Array.isArray(parsed.sites)
+  ) {
     const categoryLabels = new Map<string, string>();
     if (Array.isArray(parsed.categories)) {
-      parsed.categories.forEach((category) => {
-        if (isRecord(category) && typeof category.id === "string" && typeof category.label === "string") categoryLabels.set(category.id, category.label);
+      parsed.categories.forEach(category => {
+        if (
+          isRecord(category) &&
+          typeof category.id === "string" &&
+          typeof category.label === "string"
+        )
+          categoryLabels.set(category.id, category.label);
       });
     }
-    const favoriteIds = new Set(Array.isArray(parsed.favorites) ? parsed.favorites.filter((id): id is string => typeof id === "string") : []);
+    const favoriteIds = new Set(
+      Array.isArray(parsed.favorites)
+        ? parsed.favorites.filter((id): id is string => typeof id === "string")
+        : []
+    );
     const groups = new Map<string, ImportedBookmark[]>();
-    parsed.sites.forEach((value) => {
-      if (!isRecord(value) || typeof value.name !== "string" || typeof value.url !== "string") return;
-      const categoryId = typeof value.category === "string" ? value.category : "";
-      const label = categoryLabels.get(categoryId) || (typeof value.categoryLabel === "string" ? value.categoryLabel : "未分类");
+    parsed.sites.forEach(value => {
+      if (
+        !isRecord(value) ||
+        typeof value.name !== "string" ||
+        typeof value.url !== "string"
+      )
+        return;
+      const categoryId =
+        typeof value.category === "string" ? value.category : "";
+      const label =
+        categoryLabels.get(categoryId) ||
+        (typeof value.categoryLabel === "string"
+          ? value.categoryLabel
+          : "未分类");
       const bookmarks = groups.get(label) || [];
       bookmarks.push({
         name: value.name,
         url: value.url,
-        description: typeof value.description === "string" ? value.description : undefined,
+        description:
+          typeof value.description === "string" ? value.description : undefined,
         iconUrl: typeof value.iconUrl === "string" ? value.iconUrl : undefined,
         icon: typeof value.icon === "string" ? value.icon : undefined,
-        tags: Array.isArray(value.tags) ? value.tags.filter((tag): tag is string => typeof tag === "string") : undefined,
+        tags: Array.isArray(value.tags)
+          ? value.tags.filter((tag): tag is string => typeof tag === "string")
+          : undefined,
         favorite: typeof value.id === "string" && favoriteIds.has(value.id),
       });
       groups.set(label, bookmarks);
@@ -250,21 +341,33 @@ function parseBookmarkFile(text: string): ImportedBookmarkGroup[] {
 
   const groups: ImportedBookmarkGroup[] = [];
   const visit = (value: unknown, inheritedLabel = "未分类") => {
-    if (Array.isArray(value)) return value.forEach((item) => visit(item, inheritedLabel));
+    if (Array.isArray(value))
+      return value.forEach(item => visit(item, inheritedLabel));
     if (!isRecord(value)) return;
     if (typeof value.url === "string") {
       const name = typeof value.name === "string" ? value.name : "";
-      let group = groups.find((item) => item.label === inheritedLabel);
-      if (!group) { group = { label: inheritedLabel, bookmarks: [] }; groups.push(group); }
-      group.bookmarks.push({ name, url: value.url, iconUrl: typeof value.bgImage === "string" ? value.bgImage : undefined, icon: typeof value.bgText === "string" ? value.bgText : undefined });
+      let group = groups.find(item => item.label === inheritedLabel);
+      if (!group) {
+        group = { label: inheritedLabel, bookmarks: [] };
+        groups.push(group);
+      }
+      group.bookmarks.push({
+        name,
+        url: value.url,
+        iconUrl: typeof value.bgImage === "string" ? value.bgImage : undefined,
+        icon: typeof value.bgText === "string" ? value.bgText : undefined,
+      });
       return;
     }
     if (Array.isArray(value.children)) {
-      const label = typeof value.name === "string" && value.name.trim() ? value.name.trim() : inheritedLabel;
-      value.children.forEach((item) => visit(item, label));
+      const label =
+        typeof value.name === "string" && value.name.trim()
+          ? value.name.trim()
+          : inheritedLabel;
+      value.children.forEach(item => visit(item, label));
       return;
     }
-    Object.values(value).forEach((item) => visit(item, inheritedLabel));
+    Object.values(value).forEach(item => visit(item, inheritedLabel));
   };
   visit(parsed);
   return groups;
@@ -273,29 +376,51 @@ function parseBookmarkFile(text: string): ImportedBookmarkGroup[] {
 function getInitialCategories(): Category[] {
   const stored = readLocal<Category[]>("tidal-categories", []);
   if (Array.isArray(stored) && stored.length >= 3) {
-    const valid = stored.filter((category, index) => (
-      category &&
-      typeof category.id === "string" &&
-      typeof category.label === "string" &&
-      category.id !== "" &&
-      stored.findIndex((item) => item.id === category.id) === index
-    )).map((category) => ({
-      ...category,
-      iconKey: category.iconKey in categoryIconMap ? category.iconKey : "folder",
-      system: category.id === "all" || category.id === "favorites",
-    }));
-    if (valid.some((category) => category.id === "all") && valid.some((category) => category.id === "favorites")) return valid;
+    const valid = stored
+      .filter(
+        (category, index) =>
+          category &&
+          typeof category.id === "string" &&
+          typeof category.label === "string" &&
+          category.id !== "" &&
+          stored.findIndex(item => item.id === category.id) === index
+      )
+      .map(category => ({
+        ...category,
+        iconKey:
+          category.iconKey in categoryIconMap ? category.iconKey : "folder",
+        system: category.id === "all" || category.id === "favorites",
+      }));
+    if (
+      valid.some(category => category.id === "all") &&
+      valid.some(category => category.id === "favorites")
+    )
+      return valid;
   }
 
-  const legacyNames = readLocal<Record<string, string>>("tidal-category-names", {});
-  const legacyOrder = readLocal<string[]>("tidal-category-order", defaultCategoryMeta.map((category) => category.id));
-  const byId = new Map(defaultCategoryMeta.map((category) => [category.id, category]));
-  const ordered = legacyOrder.flatMap((id) => {
+  const legacyNames = readLocal<Record<string, string>>(
+    "tidal-category-names",
+    {}
+  );
+  const legacyOrder = readLocal<string[]>(
+    "tidal-category-order",
+    defaultCategoryMeta.map(category => category.id)
+  );
+  const byId = new Map(
+    defaultCategoryMeta.map(category => [category.id, category])
+  );
+  const ordered = legacyOrder.flatMap(id => {
     const category = byId.get(id);
-    return category ? [{ ...category, label: legacyNames[id]?.trim() || category.label }] : [];
+    return category
+      ? [{ ...category, label: legacyNames[id]?.trim() || category.label }]
+      : [];
   });
-  defaultCategoryMeta.forEach((category) => {
-    if (!ordered.some((item) => item.id === category.id)) ordered.push({ ...category, label: legacyNames[category.id]?.trim() || category.label });
+  defaultCategoryMeta.forEach(category => {
+    if (!ordered.some(item => item.id === category.id))
+      ordered.push({
+        ...category,
+        label: legacyNames[category.id]?.trim() || category.label,
+      });
   });
   return ordered;
 }
@@ -317,16 +442,28 @@ function CategoryIcon({ category }: { category: Category }) {
   );
 }
 
-function CategoryIconPicker({ value, onChange }: { value: CategoryIconKey; onChange: (value: CategoryIconKey) => void }) {
+function CategoryIconPicker({
+  value,
+  onChange,
+}: {
+  value: CategoryIconKey;
+  onChange: (value: CategoryIconKey) => void;
+}) {
   return (
-    <div className="category-icon-picker" role="group" aria-label="选择分类图标">
-      {categoryIconOptions.map((option) => {
+    <div
+      className="category-icon-picker"
+      role="group"
+      aria-label="选择分类图标"
+    >
+      {categoryIconOptions.map(option => {
         const Icon = categoryIconMap[option.key];
         return (
           <button
             key={option.key}
             type="button"
-            className={value === option.key ? "category-icon-option-active" : ""}
+            className={
+              value === option.key ? "category-icon-option-active" : ""
+            }
             onClick={() => onChange(option.key)}
             aria-label={option.label}
             aria-pressed={value === option.key}
@@ -340,11 +477,37 @@ function CategoryIconPicker({ value, onChange }: { value: CategoryIconKey; onCha
   );
 }
 
-function BackgroundSlider({ label, value, min, max, unit, onChange }: { label: string; value: number; min: number; max: number; unit: string; onChange: (value: number) => void }) {
+function BackgroundSlider({
+  label,
+  value,
+  min,
+  max,
+  unit,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  unit: string;
+  onChange: (value: number) => void;
+}) {
   return (
     <label className="background-filter-control">
-      <span><strong>{label}</strong><output>{value}{unit}</output></span>
-      <input type="range" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+      <span>
+        <strong>{label}</strong>
+        <output>
+          {value}
+          {unit}
+        </output>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        value={value}
+        onChange={event => onChange(Number(event.target.value))}
+      />
     </label>
   );
 }
@@ -360,15 +523,86 @@ function faviconUrl(siteUrl: string) {
 function SiteIcon({ site }: { site: Site }) {
   const [iconFailed, setIconFailed] = useState(false);
   const source = site.iconUrl || faviconUrl(site.url);
+  const iconScale = Math.min(100, Math.max(30, site.iconScale ?? 100));
   return (
-    <span className={`site-icon site-icon-${site.iconTone}`}>
-      {source && !iconFailed ? <img src={source} alt="" onError={() => setIconFailed(true)} /> : site.icon}
+    <span
+      className={`site-icon site-icon-${site.iconTone}`}
+      style={
+        {
+          "--site-icon-scale": `${iconScale}%`,
+          background: site.iconBackground || undefined,
+        } as CSSProperties
+      }
+    >
+      {source && !iconFailed ? (
+        <img
+          src={source}
+          alt=""
+          className={iconScale === 100 ? "site-icon-image-fill" : ""}
+          onError={() => setIconFailed(true)}
+        />
+      ) : (
+        site.icon
+      )}
     </span>
   );
 }
 
-export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthenticated: boolean; onLogin: () => void; onLogout: () => void }) {
+function IconCustomization({
+  scale,
+  background,
+  onScaleChange,
+  onBackgroundChange,
+}: {
+  scale: number;
+  background: string;
+  onScaleChange: (value: number) => void;
+  onBackgroundChange: (value: string) => void;
+}) {
+  return (
+    <div className="icon-customization">
+      <label className="icon-scale-control">
+        <span>
+          图标大小 <output>{scale}%</output>
+        </span>
+        <input
+          type="range"
+          min={30}
+          max={100}
+          step={5}
+          value={scale}
+          onChange={event => onScaleChange(Number(event.target.value))}
+        />
+      </label>
+      <label className="icon-background-control">
+        <span>Icon 底色</span>
+        <span className="icon-color-picker">
+          <input
+            type="color"
+            value={background}
+            onChange={event => onBackgroundChange(event.target.value)}
+            aria-label="选择 Icon 底色"
+          />
+          <i style={{ background }} />
+        </span>
+      </label>
+    </div>
+  );
+}
+
+export default function Home({
+  isAuthenticated,
+  onLogin,
+  onLogout,
+}: {
+  isAuthenticated: boolean;
+  onLogin: () => void;
+  onLogout: () => void;
+}) {
   const searchRef = useRef<HTMLInputElement>(null);
+  const mobileNavTriggerRef = useRef<HTMLButtonElement>(null);
+  const mobileNavCloseRef = useRef<HTMLButtonElement>(null);
+  const mobileNavWasOpenRef = useRef(false);
   const bookmarkImportRef = useRef<HTMLInputElement>(null);
   const categoryNavRef = useRef<HTMLElement>(null);
   const draggingSiteIdRef = useRef<string | null>(null);
@@ -381,20 +615,33 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
   const settingsCloseTimerRef = useRef<number | null>(null);
   const editHintExitTimerRef = useRef<number | null>(null);
   const categoryTransitionTimersRef = useRef<number[]>([]);
-  const [storageMode, setStorageMode] = useState<"connecting" | "cloud" | "local">("connecting");
+  const [storageMode, setStorageMode] = useState<
+    "connecting" | "cloud" | "local"
+  >("connecting");
   const [cloudStateReady, setCloudStateReady] = useState(false);
   const [lastSyncedLabel, setLastSyncedLabel] = useState("");
   const [savingSite, setSavingSite] = useState(false);
   const [importingBookmarks, setImportingBookmarks] = useState(false);
-  const [sites, setSites] = useState<Site[]>(() => readLocal("tidal-sites", initialSites));
+  const [sites, setSites] = useState<Site[]>(() =>
+    readLocal("tidal-sites", initialSites)
+  );
   const [activeCategory, setActiveCategory] = useState<CategoryId>("all");
   const [displayedCategory, setDisplayedCategory] = useState<CategoryId>("all");
-  const [categoryTransitionPhase, setCategoryTransitionPhase] = useState<"idle" | "exiting" | "entering" | "settled">("idle");
+  const [categoryTransitionPhase, setCategoryTransitionPhase] = useState<
+    "idle" | "exiting" | "entering" | "settled"
+  >("idle");
   const [query, setQuery] = useState("");
-  const [favorites, setFavorites] = useState<string[]>(() => readLocal("tidal-favorites", []));
+  const [favorites, setFavorites] = useState<string[]>(() =>
+    readLocal("tidal-favorites", [])
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsClosing, setSettingsClosing] = useState(false);
-  const [settingsPreviewRect, setSettingsPreviewRect] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [settingsPreviewRect, setSettingsPreviewRect] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editHintExiting, setEditHintExiting] = useState(false);
@@ -402,29 +649,98 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
   const [draggingSiteId, setDraggingSiteId] = useState<string | null>(null);
   const [orderDirty, setOrderDirty] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => readLocal("tidal-sidebar-collapsed", false));
-  const [skin, setSkin] = useState<"dark" | "light">(() => readLocal("tidal-skin", "dark"));
-  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(() => readLocal("tidal-background", "mist"));
-  const [customBackground, setCustomBackground] = useState(() => readLocal("tidal-custom-background", "#f5f5f7"));
-  const [backgroundImage, setBackgroundImage] = useState(() => readLocal("tidal-background-image", ""));
-  const [backgroundImageBlur, setBackgroundImageBlur] = useState(() => readLocal("tidal-background-image-blur", 8));
-  const [backgroundImageBrightness, setBackgroundImageBrightness] = useState(() => readLocal("tidal-background-image-brightness", 100));
-  const [backgroundImageContrast, setBackgroundImageContrast] = useState(() => readLocal("tidal-background-image-contrast", 100));
-  const [backgroundImageAdaptive, setBackgroundImageAdaptive] = useState(() => readLocal("tidal-background-image-adaptive", true));
-  const [viewMode, setViewMode] = useState<ViewMode>(() => readLocal("tidal-view", "comfortable"));
-  const [sortMode, setSortMode] = useState<SortMode>(() => readLocal("tidal-sort", "curated"));
-  const [showDescriptions, setShowDescriptions] = useState(() => readLocal("tidal-descriptions", true));
-  const [siteName, setSiteName] = useState(() => readLocal("tidal-name", "我的导航"));
-  const [categories, setCategories] = useState<Category[]>(getInitialCategories);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
+    readLocal("tidal-sidebar-collapsed", false)
+  );
+  const [skin, setSkin] = useState<"dark" | "light">(() =>
+    readLocal("tidal-skin", "dark")
+  );
+  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(() =>
+    readLocal("tidal-background", "mist")
+  );
+  const [customBackground, setCustomBackground] = useState(() =>
+    readLocal("tidal-custom-background", "#f5f5f7")
+  );
+  const [backgroundImage, setBackgroundImage] = useState(() =>
+    readLocal("tidal-background-image", "")
+  );
+  const [backgroundImageBlur, setBackgroundImageBlur] = useState(() =>
+    readLocal("tidal-background-image-blur", 8)
+  );
+  const [backgroundImageBrightness, setBackgroundImageBrightness] = useState(
+    () => readLocal("tidal-background-image-brightness", 100)
+  );
+  const [backgroundImageContrast, setBackgroundImageContrast] = useState(() =>
+    readLocal("tidal-background-image-contrast", 100)
+  );
+  const [backgroundImageAdaptive, setBackgroundImageAdaptive] = useState(() =>
+    readLocal("tidal-background-image-adaptive", true)
+  );
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    normalizeViewMode(readLocal("tidal-view", "large"))
+  );
+  const [sortMode, setSortMode] = useState<SortMode>(() =>
+    readLocal("tidal-sort", "curated")
+  );
+  const [showDescriptions, setShowDescriptions] = useState(() =>
+    readLocal("tidal-descriptions", true)
+  );
+  const [siteName, setSiteName] = useState(() =>
+    readLocal("tidal-name", "我的导航")
+  );
+  const [categories, setCategories] =
+    useState<Category[]>(getInitialCategories);
   const [addingCategory, setAddingCategory] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState("");
-  const [newCategoryIcon, setNewCategoryIcon] = useState<CategoryIconKey>("folder");
-  const [editingCategoryId, setEditingCategoryId] = useState<CategoryId | null>(null);
-  const [pendingDeleteCategoryId, setPendingDeleteCategoryId] = useState<CategoryId | null>(null);
-  const [draggingCategoryId, setDraggingCategoryId] = useState<CategoryId | null>(null);
-  const [newSite, setNewSite] = useState({ name: "", url: "", description: "", category: "" as Site["category"], tags: [] as string[], iconUrl: "" });
+  const [newCategoryIcon, setNewCategoryIcon] =
+    useState<CategoryIconKey>("folder");
+  const [editingCategoryId, setEditingCategoryId] = useState<CategoryId | null>(
+    null
+  );
+  const [pendingDeleteCategoryId, setPendingDeleteCategoryId] =
+    useState<CategoryId | null>(null);
+  const [draggingCategoryId, setDraggingCategoryId] =
+    useState<CategoryId | null>(null);
+  const [newSite, setNewSite] = useState({
+    name: "",
+    url: "",
+    description: "",
+    category: "" as Site["category"],
+    tags: [] as string[],
+    iconUrl: "",
+    iconScale: 100,
+    iconBackground: "#ffffff",
+  });
   const [analyzingSite, setAnalyzingSite] = useState(false);
-  const [analysisSource, setAnalysisSource] = useState<AnalysisSource | null>(null);
+  const [analysisSource, setAnalysisSource] = useState<AnalysisSource | null>(
+    null
+  );
+
+  function changeSkin(nextSkin: "dark" | "light") {
+    if (nextSkin === skin) return;
+
+    const transitionDocument = document as Document & {
+      startViewTransition?: (callback: () => void) => {
+        finished: Promise<void>;
+      };
+    };
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+
+    if (!transitionDocument.startViewTransition || prefersReducedMotion) {
+      setSkin(nextSkin);
+      return;
+    }
+
+    document.documentElement.dataset.themeTransition = nextSkin;
+    const transition = transitionDocument.startViewTransition(() => {
+      flushSync(() => setSkin(nextSkin));
+    });
+    void transition.finished.finally(() => {
+      delete document.documentElement.dataset.themeTransition;
+    });
+  }
 
   useEffect(() => {
     window.localStorage.setItem("tidal-sites", JSON.stringify(sites));
@@ -439,10 +755,13 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
           fetch("/api/sites"),
           fetch("/api/state"),
         ]);
-        if (!sitesResponse.ok || !stateResponse.ok) throw new Error("D1 unavailable");
-        const sitesPayload = await sitesResponse.json() as { sites?: Site[] };
-        const statePayload = await stateResponse.json() as CloudStateResponse;
-        const remoteSites = Array.isArray(sitesPayload.sites) ? sitesPayload.sites : [];
+        if (!sitesResponse.ok || !stateResponse.ok)
+          throw new Error("D1 unavailable");
+        const sitesPayload = (await sitesResponse.json()) as { sites?: Site[] };
+        const statePayload = (await stateResponse.json()) as CloudStateResponse;
+        const remoteSites = Array.isArray(sitesPayload.sites)
+          ? sitesPayload.sites
+          : [];
         let resolvedSites = remoteSites;
         if (cancelled) return;
 
@@ -464,26 +783,57 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
 
         const remoteState = statePayload.state;
         if (remoteState) {
-          if (Array.isArray(remoteState.categories) && remoteState.categories.length >= 2) setCategories(remoteState.categories);
-          if (Array.isArray(remoteState.favorites)) setFavorites(remoteState.favorites);
+          if (
+            Array.isArray(remoteState.categories) &&
+            remoteState.categories.length >= 2
+          )
+            setCategories(remoteState.categories);
+          if (Array.isArray(remoteState.favorites))
+            setFavorites(remoteState.favorites);
           const preferences = remoteState.preferences || {};
-          if (preferences.skin === "dark" || preferences.skin === "light") setSkin(preferences.skin);
-          if (["comfortable", "dense", "icon"].includes(String(preferences.viewMode))) setViewMode(preferences.viewMode as ViewMode);
-          if (preferences.sortMode === "curated" || preferences.sortMode === "az") setSortMode(preferences.sortMode);
-          if (typeof preferences.showDescriptions === "boolean") setShowDescriptions(preferences.showDescriptions);
-          if (typeof preferences.siteName === "string") setSiteName(preferences.siteName);
-          if (typeof preferences.sidebarCollapsed === "boolean") setSidebarCollapsed(preferences.sidebarCollapsed);
-          if (["mist", "blue", "midnight", "custom"].includes(String(preferences.backgroundMode))) setBackgroundMode(preferences.backgroundMode as BackgroundMode);
-          if (typeof preferences.customBackground === "string") setCustomBackground(preferences.customBackground);
-          if (typeof preferences.backgroundImage === "string") setBackgroundImage(preferences.backgroundImage);
-          if (typeof preferences.backgroundImageBlur === "number") setBackgroundImageBlur(preferences.backgroundImageBlur);
-          if (typeof preferences.backgroundImageBrightness === "number") setBackgroundImageBrightness(preferences.backgroundImageBrightness);
-          if (typeof preferences.backgroundImageContrast === "number") setBackgroundImageContrast(preferences.backgroundImageContrast);
-          if (typeof preferences.backgroundImageAdaptive === "boolean") setBackgroundImageAdaptive(preferences.backgroundImageAdaptive);
+          if (preferences.skin === "dark" || preferences.skin === "light")
+            setSkin(preferences.skin);
+          if (preferences.viewMode)
+            setViewMode(normalizeViewMode(preferences.viewMode));
+          if (
+            preferences.sortMode === "curated" ||
+            preferences.sortMode === "az"
+          )
+            setSortMode(preferences.sortMode);
+          if (typeof preferences.showDescriptions === "boolean")
+            setShowDescriptions(preferences.showDescriptions);
+          if (typeof preferences.siteName === "string")
+            setSiteName(preferences.siteName);
+          if (typeof preferences.sidebarCollapsed === "boolean")
+            setSidebarCollapsed(preferences.sidebarCollapsed);
+          if (
+            ["mist", "blue", "midnight", "custom"].includes(
+              String(preferences.backgroundMode)
+            )
+          )
+            setBackgroundMode(preferences.backgroundMode as BackgroundMode);
+          if (typeof preferences.customBackground === "string")
+            setCustomBackground(preferences.customBackground);
+          if (typeof preferences.backgroundImage === "string")
+            setBackgroundImage(preferences.backgroundImage);
+          if (typeof preferences.backgroundImageBlur === "number")
+            setBackgroundImageBlur(preferences.backgroundImageBlur);
+          if (typeof preferences.backgroundImageBrightness === "number")
+            setBackgroundImageBrightness(preferences.backgroundImageBrightness);
+          if (typeof preferences.backgroundImageContrast === "number")
+            setBackgroundImageContrast(preferences.backgroundImageContrast);
+          if (typeof preferences.backgroundImageAdaptive === "boolean")
+            setBackgroundImageAdaptive(preferences.backgroundImageAdaptive);
         } else {
-          const seedCategories = isAuthenticated ? [...categories] : defaultCategoryMeta.map((category) => ({ ...category }));
+          const seedCategories = isAuthenticated
+            ? [...categories]
+            : defaultCategoryMeta.map(category => ({ ...category }));
           for (const site of resolvedSites) {
-            if (!site.category || seedCategories.some((category) => category.id === site.category)) continue;
+            if (
+              !site.category ||
+              seedCategories.some(category => category.id === site.category)
+            )
+              continue;
             seedCategories.push({
               id: site.category,
               label: site.categoryLabel || "未分类",
@@ -500,9 +850,19 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
                 categories: seedCategories,
                 favorites,
                 preferences: {
-                  skin, viewMode, sortMode, showDescriptions, siteName, sidebarCollapsed,
-                  backgroundMode, customBackground, backgroundImage, backgroundImageBlur,
-                  backgroundImageBrightness, backgroundImageContrast, backgroundImageAdaptive,
+                  skin,
+                  viewMode,
+                  sortMode,
+                  showDescriptions,
+                  siteName,
+                  sidebarCollapsed,
+                  backgroundMode,
+                  customBackground,
+                  backgroundImage,
+                  backgroundImageBlur,
+                  backgroundImageBrightness,
+                  backgroundImageContrast,
+                  backgroundImageAdaptive,
                 },
               }),
             });
@@ -513,7 +873,12 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
         if (!cancelled) {
           setCloudStateReady(isAuthenticated);
           setStorageMode("cloud");
-          setLastSyncedLabel(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+          setLastSyncedLabel(
+            new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          );
         }
       } catch {
         if (!cancelled) {
@@ -523,16 +888,20 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
       }
     };
     void syncCloud();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isAuthenticated]);
 
   useEffect(() => {
     window.localStorage.setItem("tidal-favorites", JSON.stringify(favorites));
   }, [favorites]);
   useEffect(() => {
-    const siteIds = new Set(sites.map((site) => site.id));
-    setFavorites((current) => {
-      const valid = current.filter((id, index) => siteIds.has(id) && current.indexOf(id) === index);
+    const siteIds = new Set(sites.map(site => site.id));
+    setFavorites(current => {
+      const valid = current.filter(
+        (id, index) => siteIds.has(id) && current.indexOf(id) === index
+      );
       return valid.length === current.length ? current : valid;
     });
   }, [sites]);
@@ -546,31 +915,55 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     window.localStorage.setItem("tidal-sort", JSON.stringify(sortMode));
   }, [sortMode]);
   useEffect(() => {
-    window.localStorage.setItem("tidal-descriptions", JSON.stringify(showDescriptions));
+    window.localStorage.setItem(
+      "tidal-descriptions",
+      JSON.stringify(showDescriptions)
+    );
   }, [showDescriptions]);
   useEffect(() => {
     window.localStorage.setItem("tidal-name", JSON.stringify(siteName));
   }, [siteName]);
   useEffect(() => {
-    window.localStorage.setItem("tidal-sidebar-collapsed", JSON.stringify(sidebarCollapsed));
+    window.localStorage.setItem(
+      "tidal-sidebar-collapsed",
+      JSON.stringify(sidebarCollapsed)
+    );
   }, [sidebarCollapsed]);
   useEffect(() => {
-    window.localStorage.setItem("tidal-background", JSON.stringify(backgroundMode));
+    window.localStorage.setItem(
+      "tidal-background",
+      JSON.stringify(backgroundMode)
+    );
   }, [backgroundMode]);
   useEffect(() => {
-    window.localStorage.setItem("tidal-custom-background", JSON.stringify(customBackground));
+    window.localStorage.setItem(
+      "tidal-custom-background",
+      JSON.stringify(customBackground)
+    );
   }, [customBackground]);
   useEffect(() => {
-    window.localStorage.setItem("tidal-background-image-blur", JSON.stringify(backgroundImageBlur));
+    window.localStorage.setItem(
+      "tidal-background-image-blur",
+      JSON.stringify(backgroundImageBlur)
+    );
   }, [backgroundImageBlur]);
   useEffect(() => {
-    window.localStorage.setItem("tidal-background-image-brightness", JSON.stringify(backgroundImageBrightness));
+    window.localStorage.setItem(
+      "tidal-background-image-brightness",
+      JSON.stringify(backgroundImageBrightness)
+    );
   }, [backgroundImageBrightness]);
   useEffect(() => {
-    window.localStorage.setItem("tidal-background-image-contrast", JSON.stringify(backgroundImageContrast));
+    window.localStorage.setItem(
+      "tidal-background-image-contrast",
+      JSON.stringify(backgroundImageContrast)
+    );
   }, [backgroundImageContrast]);
   useEffect(() => {
-    window.localStorage.setItem("tidal-background-image-adaptive", JSON.stringify(backgroundImageAdaptive));
+    window.localStorage.setItem(
+      "tidal-background-image-adaptive",
+      JSON.stringify(backgroundImageAdaptive)
+    );
   }, [backgroundImageAdaptive]);
   useEffect(() => {
     window.localStorage.setItem("tidal-categories", JSON.stringify(categories));
@@ -588,15 +981,30 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
               categories,
               favorites,
               preferences: {
-                skin, viewMode, sortMode, showDescriptions, siteName, sidebarCollapsed,
-                backgroundMode, customBackground, backgroundImage, backgroundImageBlur,
-                backgroundImageBrightness, backgroundImageContrast, backgroundImageAdaptive,
+                skin,
+                viewMode,
+                sortMode,
+                showDescriptions,
+                siteName,
+                sidebarCollapsed,
+                backgroundMode,
+                customBackground,
+                backgroundImage,
+                backgroundImageBlur,
+                backgroundImageBrightness,
+                backgroundImageContrast,
+                backgroundImageAdaptive,
               },
             }),
           });
           if (!response.ok) throw new Error("D1 state save failed");
           setStorageMode("cloud");
-          setLastSyncedLabel(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+          setLastSyncedLabel(
+            new Date().toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            })
+          );
         } catch {
           setStorageMode("local");
         }
@@ -605,9 +1013,23 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     }, 600);
     return () => window.clearTimeout(timer);
   }, [
-    cloudStateReady, isAuthenticated, categories, favorites, skin, viewMode, sortMode, showDescriptions,
-    siteName, sidebarCollapsed, backgroundMode, customBackground, backgroundImage,
-    backgroundImageBlur, backgroundImageBrightness, backgroundImageContrast, backgroundImageAdaptive,
+    cloudStateReady,
+    isAuthenticated,
+    categories,
+    favorites,
+    skin,
+    viewMode,
+    sortMode,
+    showDescriptions,
+    siteName,
+    sidebarCollapsed,
+    backgroundMode,
+    customBackground,
+    backgroundImage,
+    backgroundImageBlur,
+    backgroundImageBrightness,
+    backgroundImageContrast,
+    backgroundImageAdaptive,
   ]);
 
   useEffect(() => {
@@ -619,7 +1041,10 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
   }, [isAuthenticated]);
 
   const openSettings = () => {
-    if (!isAuthenticated) { onLogin(); return; }
+    if (!isAuthenticated) {
+      onLogin();
+      return;
+    }
     if (settingsCloseTimerRef.current !== null) {
       window.clearTimeout(settingsCloseTimerRef.current);
       settingsCloseTimerRef.current = null;
@@ -638,19 +1063,24 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     }, 320);
   };
 
-  useEffect(() => () => {
-    if (settingsCloseTimerRef.current !== null) {
-      window.clearTimeout(settingsCloseTimerRef.current);
-    }
-    if (editHintExitTimerRef.current !== null) {
-      window.clearTimeout(editHintExitTimerRef.current);
-    }
-  }, []);
+  useEffect(
+    () => () => {
+      if (settingsCloseTimerRef.current !== null) {
+        window.clearTimeout(settingsCloseTimerRef.current);
+      }
+      if (editHintExitTimerRef.current !== null) {
+        window.clearTimeout(editHintExitTimerRef.current);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
     if (activeCategory === displayedCategory) return;
 
-    categoryTransitionTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    categoryTransitionTimersRef.current.forEach(timer =>
+      window.clearTimeout(timer)
+    );
     categoryTransitionTimersRef.current = [];
     setCategoryTransitionPhase("exiting");
 
@@ -666,11 +1096,12 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     categoryTransitionTimersRef.current = [exitTimer];
 
     return () => {
-      categoryTransitionTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      categoryTransitionTimersRef.current.forEach(timer =>
+        window.clearTimeout(timer)
+      );
       categoryTransitionTimersRef.current = [];
     };
   }, [activeCategory]);
-
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -689,9 +1120,40 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [settingsOpen]);
 
+  useEffect(() => {
+    const overlayOpen =
+      mobileNavOpen || settingsOpen || addOpen || Boolean(editingSite);
+    document.documentElement.classList.toggle("overlay-open", overlayOpen);
+    return () => document.documentElement.classList.remove("overlay-open");
+  }, [addOpen, editingSite, mobileNavOpen, settingsOpen]);
+
+  useEffect(() => {
+    if (mobileNavOpen) {
+      const animationFrame = window.requestAnimationFrame(() =>
+        mobileNavCloseRef.current?.focus()
+      );
+      mobileNavWasOpenRef.current = true;
+      return () => window.cancelAnimationFrame(animationFrame);
+    }
+    if (mobileNavWasOpenRef.current) mobileNavTriggerRef.current?.focus();
+    mobileNavWasOpenRef.current = false;
+  }, [mobileNavOpen]);
+
+  useEffect(() => {
+    const desktopQuery = window.matchMedia("(min-width: 781px)");
+    const closeMobileNavOnDesktop = () => {
+      if (desktopQuery.matches) setMobileNavOpen(false);
+    };
+    desktopQuery.addEventListener("change", closeMobileNavOnDesktop);
+    return () =>
+      desktopQuery.removeEventListener("change", closeMobileNavOnDesktop);
+  }, []);
   const categoryMeta = useMemo(() => {
-    const allCategory = categories.find((category) => category.id === "all");
-    return allCategory ? [allCategory, ...categories.filter((category) => category.id !== "all")] : categories;
+    const allCategory = categories.find(category => category.id === "all");
+
+    return allCategory
+      ? [allCategory, ...categories.filter(category => category.id !== "all")]
+      : categories;
   }, [categories]);
 
   useLayoutEffect(() => {
@@ -699,7 +1161,8 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     if (!nav) return;
 
     const updateScrollCue = () => {
-      const canScrollFurther = nav.scrollHeight - nav.clientHeight - nav.scrollTop > 1;
+      const canScrollFurther =
+        nav.scrollHeight - nav.clientHeight - nav.scrollTop > 1;
       nav.classList.toggle("category-nav-can-scroll", canScrollFurther);
     };
     const resizeObserver = new ResizeObserver(updateScrollCue);
@@ -712,12 +1175,24 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
       nav.removeEventListener("scroll", updateScrollCue);
     };
   }, [categoryMeta.length, sidebarCollapsed]);
-  const categoryNames = useMemo(() => Object.fromEntries(categories.map((category) => [category.id, category.label])) as Record<string, string>, [categories]);
-  const contentCategories = useMemo(() => categories.filter((category) => !category.system), [categories]);
+  const categoryNames = useMemo(
+    () =>
+      Object.fromEntries(
+        categories.map(category => [category.id, category.label])
+      ) as Record<string, string>,
+    [categories]
+  );
+  const contentCategories = useMemo(
+    () => categories.filter(category => !category.system),
+    [categories]
+  );
   const defaultContentCategoryId = contentCategories[0]?.id || "";
 
   const openAddSite = () => {
-    if (!isAuthenticated) { onLogin(); return; }
+    if (!isAuthenticated) {
+      onLogin();
+      return;
+    }
     if (!contentCategories.length) {
       openSettings();
       setAddingCategory(true);
@@ -726,30 +1201,46 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
       toast.message("请先创建一个分类，再添加入口。");
       return;
     }
-    setNewSite((current) => contentCategories.some((category) => category.id === current.category)
-      ? current
-      : { ...current, category: defaultContentCategoryId });
+    setNewSite(current =>
+      contentCategories.some(category => category.id === current.category)
+        ? current
+        : { ...current, category: defaultContentCategoryId }
+    );
     setAddOpen(true);
   };
 
   const filteredSites = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    const next = sites.filter((site) => {
+    const next = sites.filter(site => {
       const inCategory =
         displayedCategory === "all" ||
-        (displayedCategory === "favorites" ? favorites.includes(site.id) : site.category === displayedCategory);
-      const inQuery = !normalized || [site.name, site.description, categoryNames[site.category] || site.categoryLabel, ...site.tags].join(" ").toLowerCase().includes(normalized);
+        (displayedCategory === "favorites"
+          ? favorites.includes(site.id)
+          : site.category === displayedCategory);
+      const inQuery =
+        !normalized ||
+        [
+          site.name,
+          site.description,
+          categoryNames[site.category] || site.categoryLabel,
+          ...site.tags,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalized);
       return inCategory && inQuery;
     });
-    if (sortMode === "az") return [...next].sort((a, b) => a.name.localeCompare(b.name));
+    if (sortMode === "az")
+      return [...next].sort((a, b) => a.name.localeCompare(b.name));
     return next;
   }, [displayedCategory, categoryNames, favorites, query, sites, sortMode]);
   const settingsPreviewSite = filteredSites[0];
 
   useLayoutEffect(() => {
     if (!settingsOpen || !settingsPreviewSite) return;
-    const element = Array.from(document.querySelectorAll<HTMLElement>("[data-site-id]"))
-      .find((candidate) => candidate.dataset.siteId === settingsPreviewSite.id);
+    const element = Array.from(
+      document.querySelectorAll<HTMLElement>("[data-site-id]")
+    ).find(candidate => candidate.dataset.siteId === settingsPreviewSite.id);
     if (!element) return;
 
     const updatePreviewRect = () => {
@@ -765,7 +1256,9 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     const resizeObserver = new ResizeObserver(updatePreviewRect);
     const scrollRoot = document.querySelector<HTMLElement>(".main-content");
     resizeObserver.observe(element);
-    scrollRoot?.addEventListener("scroll", updatePreviewRect, { passive: true });
+    scrollRoot?.addEventListener("scroll", updatePreviewRect, {
+      passive: true,
+    });
     window.addEventListener("resize", updatePreviewRect);
     const animationFrame = window.requestAnimationFrame(updatePreviewRect);
     return () => {
@@ -789,39 +1282,65 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
     const nextAnimations = new Map<string, Animation>();
-    document.querySelectorAll<HTMLElement>("[data-site-id]").forEach((element) => {
-      const siteId = element.dataset.siteId;
-      const previous = siteId ? siteLayoutPositionsRef.current.get(siteId) : undefined;
-      if (!siteId || !previous) return;
-      const current = element.getBoundingClientRect();
-      const deltaX = previous.left - current.left;
-      const deltaY = previous.top - current.top;
-      if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
+    document
+      .querySelectorAll<HTMLElement>("[data-site-id]")
+      .forEach(element => {
+        const siteId = element.dataset.siteId;
+        const previous = siteId
+          ? siteLayoutPositionsRef.current.get(siteId)
+          : undefined;
+        if (!siteId || !previous) return;
+        const current = element.getBoundingClientRect();
+        const deltaX = previous.left - current.left;
+        const deltaY = previous.top - current.top;
+        if (Math.abs(deltaX) < 1 && Math.abs(deltaY) < 1) return;
 
-      const animation = element.animate([
-        { transform: `translate3d(${deltaX}px, ${deltaY}px, 0) scale(.985)` },
-        { transform: `translate3d(${-deltaX * .025}px, ${-deltaY * .025}px, 0) scale(1.006)`, offset: .78 },
-        { transform: "translate3d(0, 0, 0) scale(1)" },
-      ], {
-        duration: 430,
-        easing: "cubic-bezier(.22, 1, .36, 1)",
+        const animation = element.animate(
+          [
+            {
+              transform: `translate3d(${deltaX}px, ${deltaY}px, 0) scale(.985)`,
+            },
+            {
+              transform: `translate3d(${-deltaX * 0.025}px, ${-deltaY * 0.025}px, 0) scale(1.006)`,
+              offset: 0.78,
+            },
+            { transform: "translate3d(0, 0, 0) scale(1)" },
+          ],
+          {
+            duration: 430,
+            easing: "cubic-bezier(.22, 1, .36, 1)",
+          }
+        );
+        animation.onfinish = () =>
+          siteLayoutAnimationsRef.current.delete(siteId);
+        nextAnimations.set(siteId, animation);
       });
-      animation.onfinish = () => siteLayoutAnimationsRef.current.delete(siteId);
-      nextAnimations.set(siteId, animation);
-    });
     siteLayoutAnimationsRef.current = nextAnimations;
   }, [sites]);
 
-  const toggleFavorite = (event: ReactMouseEvent<HTMLButtonElement>, site: Site) => {
+  const toggleFavorite = (
+    event: ReactMouseEvent<HTMLButtonElement>,
+    site: Site
+  ) => {
     event.preventDefault();
     event.stopPropagation();
-    if (!isAuthenticated) { onLogin(); return; }
+    if (!isAuthenticated) {
+      onLogin();
+      return;
+    }
     const isFavorite = favorites.includes(site.id);
-    setFavorites((current) => (current.includes(site.id) ? current.filter((item) => item !== site.id) : [...current, site.id]));
-    toast.success(isFavorite ? `已取消收藏“${site.name}”。` : `已收藏“${site.name}”。`);
+    setFavorites(current =>
+      current.includes(site.id)
+        ? current.filter(item => item !== site.id)
+        : [...current, site.id]
+    );
+    toast.success(
+      isFavorite ? `已取消收藏“${site.name}”。` : `已收藏“${site.name}”。`
+    );
   };
 
-  const withSortOrder = (nextSites: Site[]) => nextSites.map((site, index) => ({ ...site, sortOrder: index }));
+  const withSortOrder = (nextSites: Site[]) =>
+    nextSites.map((site, index) => ({ ...site, sortOrder: index }));
 
   const persistSites = async (nextSites: Site[]) => {
     const orderedSites = withSortOrder(nextSites);
@@ -831,9 +1350,17 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sites: orderedSites.slice(index, index + 50) }),
       });
-      const isJson = response.headers.get("content-type")?.includes("application/json") === true;
-      const payload = isJson ? await response.json().catch(() => ({})) as { success?: boolean; error?: string } : {};
-      if (!response.ok || payload.success !== true) throw new Error(payload.error || "云端保存失败。");
+      const isJson =
+        response.headers.get("content-type")?.includes("application/json") ===
+        true;
+      const payload = isJson
+        ? ((await response.json().catch(() => ({}))) as {
+            success?: boolean;
+            error?: string;
+          })
+        : {};
+      if (!response.ok || payload.success !== true)
+        throw new Error(payload.error || "云端保存失败。");
     }
     return true;
   };
@@ -847,7 +1374,9 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
       sites: withSortOrder(sites),
       favorites,
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json;charset=utf-8",
+    });
     const downloadUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = downloadUrl;
@@ -866,19 +1395,29 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     setImportingBookmarks(true);
     try {
       const groups = parseBookmarkFile(await file.text());
-      if (!groups.some((group) => group.bookmarks.length)) throw new Error("没有识别到可导入的书签。");
+      if (!groups.some(group => group.bookmarks.length))
+        throw new Error("没有识别到可导入的书签。");
 
       const nextCategories = [...categories];
       const categoryByLabel = new Map(
-        nextCategories.filter((category) => !category.system).map((category) => [category.label.trim().toLocaleLowerCase(), category]),
+        nextCategories
+          .filter(category => !category.system)
+          .map(category => [
+            category.label.trim().toLocaleLowerCase(),
+            category,
+          ])
       );
-      const knownUrls = new Set(sites.map((site) => normalizeBookmarkUrl(site.url).toLocaleLowerCase()).filter(Boolean));
+      const knownUrls = new Set(
+        sites
+          .map(site => normalizeBookmarkUrl(site.url).toLocaleLowerCase())
+          .filter(Boolean)
+      );
       const importedSites: Site[] = [];
       const importedFavoriteIds: string[] = [];
       let skipped = 0;
       let sequence = 0;
 
-      groups.forEach((group) => {
+      groups.forEach(group => {
         const label = (group.label.trim() || "未分类").slice(0, 18);
         const labelKey = label.toLocaleLowerCase();
         let category = categoryByLabel.get(labelKey);
@@ -889,12 +1428,18 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
             iconKey: "folder",
             color: "blue",
           };
-          const favoritesIndex = nextCategories.findIndex((item) => item.id === "favorites");
-          nextCategories.splice(favoritesIndex >= 0 ? favoritesIndex : nextCategories.length, 0, category);
+          const favoritesIndex = nextCategories.findIndex(
+            item => item.id === "favorites"
+          );
+          nextCategories.splice(
+            favoritesIndex >= 0 ? favoritesIndex : nextCategories.length,
+            0,
+            category
+          );
           categoryByLabel.set(labelKey, category);
         }
 
-        group.bookmarks.forEach((bookmark) => {
+        group.bookmarks.forEach(bookmark => {
           const url = normalizeBookmarkUrl(bookmark.url);
           const urlKey = url.toLocaleLowerCase();
           if (!url || knownUrls.has(urlKey)) {
@@ -903,34 +1448,51 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
           }
           knownUrls.add(urlKey);
           let fallbackName = "未命名书签";
-          try { fallbackName = new URL(url).hostname; } catch { /* URL was already validated */ }
+          try {
+            fallbackName = new URL(url).hostname;
+          } catch {
+            /* URL was already validated */
+          }
           const name = bookmark.name.trim() || fallbackName;
           const id = `imported-${Date.now()}-${sequence++}`;
           importedSites.push({
             id,
             name: name.slice(0, 80),
             url,
-            description: bookmark.description?.trim().slice(0, 240) || "从书签文件导入的入口。",
+            description:
+              bookmark.description?.trim().slice(0, 240) ||
+              "从书签文件导入的入口。",
             category: category.id,
             categoryLabel: category.label,
-            icon: (bookmark.icon?.trim() || name.slice(0, 2) || "书").slice(0, 8),
+            icon: (bookmark.icon?.trim() || name.slice(0, 2) || "书").slice(
+              0,
+              8
+            ),
             iconUrl: bookmark.iconUrl?.trim() || faviconUrl(url),
             iconTone: "mint",
-            tags: bookmark.tags?.filter(Boolean).slice(0, 8) || [category.label],
+            tags: bookmark.tags?.filter(Boolean).slice(0, 8) || [
+              category.label,
+            ],
           });
           if (bookmark.favorite) importedFavoriteIds.push(id);
         });
       });
 
       if (!importedSites.length) {
-        toast.message(skipped ? `没有新增书签，已跳过 ${skipped} 个重复或无效地址。` : "没有可导入的新书签。");
+        toast.message(
+          skipped
+            ? `没有新增书签，已跳过 ${skipped} 个重复或无效地址。`
+            : "没有可导入的新书签。"
+        );
         return;
       }
 
       const nextSites = withSortOrder([...sites, ...importedSites]);
       setCategories(nextCategories);
       setSites(nextSites);
-      setFavorites((current) => Array.from(new Set([...current, ...importedFavoriteIds])));
+      setFavorites(current =>
+        Array.from(new Set([...current, ...importedFavoriteIds]))
+      );
       setActiveCategory("all");
 
       let cloudSaved = false;
@@ -941,7 +1503,9 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
         // localStorage effects keep the full import available when cloud sync is unavailable.
       }
       setStorageMode(cloudSaved ? "cloud" : "local");
-      toast.success(`已导入 ${importedSites.length} 个书签、${nextCategories.length - categories.length} 个分类${skipped ? `，跳过 ${skipped} 个重复或无效地址` : ""}。`);
+      toast.success(
+        `已导入 ${importedSites.length} 个书签、${nextCategories.length - categories.length} 个分类${skipped ? `，跳过 ${skipped} 个重复或无效地址` : ""}。`
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "导入书签失败。");
     } finally {
@@ -950,8 +1514,12 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
   };
 
   const deleteSite = async (site: Site) => {
-    if (!editMode || !window.confirm(`确认删除“${site.name}”？此操作无法撤销。`)) return;
-    const nextSites = withSortOrder(sites.filter((item) => item.id !== site.id));
+    if (
+      !editMode ||
+      !window.confirm(`确认删除“${site.name}”？此操作无法撤销。`)
+    )
+      return;
+    const nextSites = withSortOrder(sites.filter(item => item.id !== site.id));
     setSavingSite(true);
     try {
       const response = await fetch("/api/sites", {
@@ -959,15 +1527,27 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: site.id }),
       });
-      const isJson = response.headers.get("content-type")?.includes("application/json") === true;
-      const payload = isJson ? await response.json().catch(() => ({})) as { success?: boolean; error?: string } : {};
+      const isJson =
+        response.headers.get("content-type")?.includes("application/json") ===
+        true;
+      const payload = isJson
+        ? ((await response.json().catch(() => ({}))) as {
+            success?: boolean;
+            error?: string;
+          })
+        : {};
       const cloudSaved = response.ok && payload.success === true;
-      if (!cloudSaved && !import.meta.env.DEV) throw new Error(payload.error || "D1 删除失败。");
+      if (!cloudSaved && !import.meta.env.DEV)
+        throw new Error(payload.error || "D1 删除失败。");
       setSites(nextSites);
-      setFavorites((current) => current.filter((id) => id !== site.id));
-      setEditingSite((current) => current?.id === site.id ? null : current);
+      setFavorites(current => current.filter(id => id !== site.id));
+      setEditingSite(current => (current?.id === site.id ? null : current));
       setStorageMode(cloudSaved ? "cloud" : "local");
-      toast.success(cloudSaved ? `已删除“${site.name}”并同步。` : `已从当前设备删除“${site.name}”。`);
+      toast.success(
+        cloudSaved
+          ? `已删除“${site.name}”并同步。`
+          : `已从当前设备删除“${site.name}”。`
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "删除入口失败。");
     } finally {
@@ -977,20 +1557,28 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
 
   const moveSite = (sourceId: string, targetId: string) => {
     if (!editMode || sourceId === targetId) return;
-    if (!sites.some((site) => site.id === sourceId) || !sites.some((site) => site.id === targetId)) return;
+    if (
+      !sites.some(site => site.id === sourceId) ||
+      !sites.some(site => site.id === targetId)
+    )
+      return;
     const previousPositions = new Map<string, DOMRect>();
-    document.querySelectorAll<HTMLElement>("[data-site-id]").forEach((element) => {
-      const siteId = element.dataset.siteId;
-      if (siteId) previousPositions.set(siteId, element.getBoundingClientRect());
-    });
-    siteLayoutAnimationsRef.current.forEach((animation) => animation.cancel());
+    document
+      .querySelectorAll<HTMLElement>("[data-site-id]")
+      .forEach(element => {
+        const siteId = element.dataset.siteId;
+        if (siteId)
+          previousPositions.set(siteId, element.getBoundingClientRect());
+      });
+    siteLayoutAnimationsRef.current.forEach(animation => animation.cancel());
     siteLayoutAnimationsRef.current.clear();
     siteLayoutPositionsRef.current = previousPositions;
     shouldAnimateSiteLayoutRef.current = true;
-    setSites((current) => {
-      const sourceIndex = current.findIndex((site) => site.id === sourceId);
-      const targetIndex = current.findIndex((site) => site.id === targetId);
-      if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return current;
+    setSites(current => {
+      const sourceIndex = current.findIndex(site => site.id === sourceId);
+      const targetIndex = current.findIndex(site => site.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex)
+        return current;
       const next = [...current];
       const [moved] = next.splice(sourceIndex, 1);
       next.splice(targetIndex, 0, moved);
@@ -1001,12 +1589,15 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
 
   const moveSiteByOffset = (siteId: string, offset: number) => {
     if (!editMode) return;
-    const currentIndex = sites.findIndex((site) => site.id === siteId);
+    const currentIndex = sites.findIndex(site => site.id === siteId);
     const target = sites[currentIndex + offset];
     if (target) moveSite(siteId, target.id);
   };
 
-  const beginSiteDrag = (event: React.PointerEvent<HTMLElement>, siteId: string) => {
+  const beginSiteDrag = (
+    event: React.PointerEvent<HTMLElement>,
+    siteId: string
+  ) => {
     if (!editMode) return;
     if ((event.target as HTMLElement).closest("button")) return;
     event.preventDefault();
@@ -1019,7 +1610,9 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
   const continueSiteDrag = (event: React.PointerEvent<HTMLElement>) => {
     const sourceId = draggingSiteIdRef.current;
     if (!sourceId) return;
-    const targetElement = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-site-id]");
+    const targetElement = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-site-id]");
     const targetId = targetElement?.dataset.siteId;
     if (!targetId || targetId === sourceId) {
       lastDragTargetRef.current = null;
@@ -1036,9 +1629,11 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     setDraggingSiteId(null);
   };
 
-
   const startEditMode = () => {
-    if (!isAuthenticated) { onLogin(); return; }
+    if (!isAuthenticated) {
+      onLogin();
+      return;
+    }
     if (editHintExitTimerRef.current !== null) {
       window.clearTimeout(editHintExitTimerRef.current);
       editHintExitTimerRef.current = null;
@@ -1087,18 +1682,26 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
   };
 
   const renameCategory = (id: CategoryId, label: string) => {
-    setCategories((current) => current.map((category) => category.id === id ? { ...category, label } : category));
+    setCategories(current =>
+      current.map(category =>
+        category.id === id ? { ...category, label } : category
+      )
+    );
   };
 
   const setCategoryIcon = (id: CategoryId, iconKey: CategoryIconKey) => {
-    setCategories((current) => current.map((category) => category.id === id ? { ...category, iconKey } : category));
+    setCategories(current =>
+      current.map(category =>
+        category.id === id ? { ...category, iconKey } : category
+      )
+    );
   };
 
   const moveCategory = (sourceId: CategoryId, targetId: CategoryId) => {
     if (sourceId === targetId) return;
-    setCategories((current) => {
-      const from = current.findIndex((category) => category.id === sourceId);
-      const to = current.findIndex((category) => category.id === targetId);
+    setCategories(current => {
+      const from = current.findIndex(category => category.id === sourceId);
+      const to = current.findIndex(category => category.id === targetId);
       if (from < 0 || to < 0 || from === to) return current;
       const next = [...current];
       const [moved] = next.splice(from, 1);
@@ -1107,7 +1710,10 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     });
   };
 
-  const beginCategoryDrag = (event: React.PointerEvent<HTMLButtonElement>, categoryId: CategoryId) => {
+  const beginCategoryDrag = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    categoryId: CategoryId
+  ) => {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     draggingCategoryIdRef.current = categoryId;
@@ -1115,12 +1721,21 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     setDraggingCategoryId(categoryId);
   };
 
-  const continueCategoryDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+  const continueCategoryDrag = (
+    event: React.PointerEvent<HTMLButtonElement>
+  ) => {
     const sourceId = draggingCategoryIdRef.current;
     if (!sourceId) return;
-    const targetElement = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-category-id]");
+    const targetElement = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-category-id]");
     const targetId = targetElement?.dataset.categoryId;
-    if (!targetId || targetId === sourceId || lastCategoryDragTargetRef.current === targetId) return;
+    if (
+      !targetId ||
+      targetId === sourceId ||
+      lastCategoryDragTargetRef.current === targetId
+    )
+      return;
     lastCategoryDragTargetRef.current = targetId;
     moveCategory(sourceId, targetId);
   };
@@ -1131,16 +1746,23 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     setDraggingCategoryId(null);
   };
 
-  const beginNativeCategoryDrag = (event: ReactDragEvent<HTMLButtonElement>, categoryId: CategoryId) => {
+  const beginNativeCategoryDrag = (
+    event: ReactDragEvent<HTMLButtonElement>,
+    categoryId: CategoryId
+  ) => {
     draggingCategoryIdRef.current = categoryId;
     setDraggingCategoryId(categoryId);
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("text/plain", categoryId);
   };
 
-  const dropNativeCategory = (event: ReactDragEvent<HTMLDivElement>, targetId: CategoryId) => {
+  const dropNativeCategory = (
+    event: ReactDragEvent<HTMLDivElement>,
+    targetId: CategoryId
+  ) => {
     event.preventDefault();
-    const sourceId = draggingCategoryIdRef.current || event.dataTransfer.getData("text/plain");
+    const sourceId =
+      draggingCategoryIdRef.current || event.dataTransfer.getData("text/plain");
     if (sourceId) moveCategory(sourceId, targetId);
     endCategoryDrag();
   };
@@ -1157,10 +1779,14 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
       iconKey: newCategoryIcon,
       color: "blue",
     };
-    setCategories((current) => {
-      const favoritesIndex = current.findIndex((item) => item.id === "favorites");
+    setCategories(current => {
+      const favoritesIndex = current.findIndex(item => item.id === "favorites");
       const next = [...current];
-      next.splice(favoritesIndex >= 0 ? favoritesIndex : next.length, 0, category);
+      next.splice(
+        favoritesIndex >= 0 ? favoritesIndex : next.length,
+        0,
+        category
+      );
       return next;
     });
     setNewCategoryName("");
@@ -1171,24 +1797,32 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
   };
 
   const deleteCategory = (id: CategoryId) => {
-    const category = categories.find((item) => item.id === id);
+    const category = categories.find(item => item.id === id);
     if (!category || category.system) return;
-    const fallback = contentCategories.find((item) => item.id !== id);
+    const fallback = contentCategories.find(item => item.id !== id);
     if (!fallback) {
       toast.error("至少需要保留一个普通分类。");
       return;
     }
     const affectedCount = categoryCounts[id] || 0;
-    const nextSites = sites.map((site) => site.category === id ? { ...site, category: fallback.id, categoryLabel: fallback.label } : site);
-    setCategories((current) => current.filter((item) => item.id !== id));
+    const nextSites = sites.map(site =>
+      site.category === id
+        ? { ...site, category: fallback.id, categoryLabel: fallback.label }
+        : site
+    );
+    setCategories(current => current.filter(item => item.id !== id));
     setSites(nextSites);
-    setNewSite((current) => current.category === id ? { ...current, category: fallback.id } : current);
+    setNewSite(current =>
+      current.category === id ? { ...current, category: fallback.id } : current
+    );
     if (activeCategory === id) setActiveCategory(fallback.id);
     setEditingCategoryId(null);
     setPendingDeleteCategoryId(null);
     if (affectedCount) {
       void persistSites(nextSites).catch(() => setStorageMode("local"));
-      toast.success(`已删除“${category.label}”，${affectedCount} 个入口已移至“${fallback.label}”。`);
+      toast.success(
+        `已删除“${category.label}”，${affectedCount} 个入口已移至“${fallback.label}”。`
+      );
     } else {
       toast.success(`已删除“${category.label}”。`);
     }
@@ -1200,7 +1834,7 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
       toast.error("请先让 AI 分析网站，再确认保存。");
       return;
     }
-    if (!contentCategories.some((category) => category.id === newSite.category)) {
+    if (!contentCategories.some(category => category.id === newSite.category)) {
       toast.error("请先创建并选择一个分类。");
       return;
     }
@@ -1208,20 +1842,36 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
       toast.error("先填入网站名称和地址。");
       return;
     }
-    const parsedUrl = newSite.url.startsWith("http") ? newSite.url : `https://${newSite.url}`;
+    const parsedUrl = newSite.url.startsWith("http")
+      ? newSite.url
+      : `https://${newSite.url}`;
     const site: Site = {
       id: `${newSite.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`,
       name: newSite.name.trim(),
       url: parsedUrl,
       description: newSite.description.trim() || "一个值得放在手边的入口。",
       category: newSite.category,
-      categoryLabel: categoryNames[newSite.category]?.trim() || categoryLabelMap[newSite.category] || "未分类",
+      categoryLabel:
+        categoryNames[newSite.category]?.trim() ||
+        categoryLabelMap[newSite.category] ||
+        "未分类",
       icon: newSite.name.trim().slice(0, 2),
       iconUrl: newSite.iconUrl.trim() || faviconUrl(parsedUrl),
+      iconScale: newSite.iconScale,
+      iconBackground: newSite.iconBackground,
       iconTone: "mint",
-      tags: newSite.tags.length ? newSite.tags : [categoryNames[newSite.category]?.trim() || categoryLabelMap[newSite.category] || "未分类"],
+      tags: newSite.tags.length
+        ? newSite.tags
+        : [
+            categoryNames[newSite.category]?.trim() ||
+              categoryLabelMap[newSite.category] ||
+              "未分类",
+          ],
     };
-    const nextSites = withSortOrder([site, ...sites.filter((item) => item.id !== site.id)]);
+    const nextSites = withSortOrder([
+      site,
+      ...sites.filter(item => item.id !== site.id),
+    ]);
     setSavingSite(true);
     try {
       const response = await fetch("/api/sites", {
@@ -1229,19 +1879,39 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sites: nextSites }),
       });
-      const isJson = response.headers.get("content-type")?.includes("application/json") === true;
-      const payload = isJson ? await response.json().catch(() => ({})) as { success?: boolean; error?: string } : {};
+      const isJson =
+        response.headers.get("content-type")?.includes("application/json") ===
+        true;
+      const payload = isJson
+        ? ((await response.json().catch(() => ({}))) as {
+            success?: boolean;
+            error?: string;
+          })
+        : {};
       const cloudSaved = response.ok && payload.success === true;
       if (!cloudSaved && !import.meta.env.DEV) {
         throw new Error(payload.error || "D1 保存失败。");
       }
       setSites(nextSites);
-      setNewSite({ name: "", url: "", description: "", category: defaultContentCategoryId, tags: [], iconUrl: "" });
+      setNewSite({
+        name: "",
+        url: "",
+        description: "",
+        category: defaultContentCategoryId,
+        tags: [],
+        iconUrl: "",
+        iconScale: 100,
+        iconBackground: "#ffffff",
+      });
       setAnalysisSource(null);
       setAddOpen(false);
       setActiveCategory("all");
       setStorageMode(cloudSaved ? "cloud" : "local");
-      toast.success(cloudSaved ? "入口已保存到 Cloudflare D1。" : "本地开发模式：入口已保存到浏览器缓存。");
+      toast.success(
+        cloudSaved
+          ? "入口已保存到 Cloudflare D1。"
+          : "本地开发模式：入口已保存到浏览器缓存。"
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "保存入口失败。");
     } finally {
@@ -1262,18 +1932,33 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newSite.name, url: newSite.url }),
       });
-      const result = await response.json() as { name?: string; description?: string; category?: Site["category"]; tags?: string[]; source?: AnalysisSource; error?: string };
+      const result = (await response.json()) as {
+        name?: string;
+        description?: string;
+        category?: Site["category"];
+        tags?: string[];
+        source?: AnalysisSource;
+        error?: string;
+      };
       if (!response.ok) throw new Error(result.error || "网站分析失败。");
-      setNewSite((current) => ({
+      setNewSite(current => ({
         ...current,
         name: result.name || current.name,
         description: result.description || "",
-        category: result.category && contentCategories.some((category) => category.id === result.category) ? result.category : defaultContentCategoryId,
+        category:
+          result.category &&
+          contentCategories.some(category => category.id === result.category)
+            ? result.category
+            : defaultContentCategoryId,
         tags: Array.isArray(result.tags) ? result.tags : [],
         iconUrl: current.iconUrl || faviconUrl(current.url),
       }));
       setAnalysisSource(result.source || "ai");
-      toast.success(result.source === "local" ? "本地智能分析完成，请确认结果。" : "AI 分析完成，请确认结果。");
+      toast.success(
+        result.source === "local"
+          ? "本地智能分析完成，请确认结果。"
+          : "AI 分析完成，请确认结果。"
+      );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "网站分析失败。");
     } finally {
@@ -1295,7 +1980,10 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
     reader.onload = () => {
       if (typeof reader.result !== "string") return;
       try {
-        window.localStorage.setItem("tidal-background-image", JSON.stringify(reader.result));
+        window.localStorage.setItem(
+          "tidal-background-image",
+          JSON.stringify(reader.result)
+        );
         setBackgroundImage(reader.result);
         toast.success("背景图片已应用到当前设备。");
       } catch {
@@ -1322,7 +2010,11 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setNewSite((current) => ({ ...current, iconUrl: typeof reader.result === "string" ? reader.result : "" }));
+    reader.onload = () =>
+      setNewSite(current => ({
+        ...current,
+        iconUrl: typeof reader.result === "string" ? reader.result : "",
+      }));
     reader.readAsDataURL(file);
   };
 
@@ -1337,7 +2029,15 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
       return;
     }
     const reader = new FileReader();
-    reader.onload = () => setEditingSite((current) => current ? { ...current, iconUrl: typeof reader.result === "string" ? reader.result : "" } : current);
+    reader.onload = () =>
+      setEditingSite(current =>
+        current
+          ? {
+              ...current,
+              iconUrl: typeof reader.result === "string" ? reader.result : "",
+            }
+          : current
+      );
     reader.readAsDataURL(file);
   };
 
@@ -1348,16 +2048,24 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
       toast.error("网站名称和地址不能为空。");
       return;
     }
-    const parsedUrl = editingSite.url.startsWith("http") ? editingSite.url : `https://${editingSite.url}`;
+    const parsedUrl = editingSite.url.startsWith("http")
+      ? editingSite.url
+      : `https://${editingSite.url}`;
     const updatedSite: Site = {
       ...editingSite,
       name: editingSite.name.trim(),
       url: parsedUrl,
       description: editingSite.description.trim() || "一个值得放在手边的入口。",
-      categoryLabel: categoryNames[editingSite.category]?.trim() || categoryLabelMap[editingSite.category] || "未分类",
+      categoryLabel:
+        categoryNames[editingSite.category]?.trim() ||
+        categoryLabelMap[editingSite.category] ||
+        "未分类",
       icon: editingSite.name.trim().slice(0, 2),
       iconUrl: editingSite.iconUrl?.trim() || faviconUrl(parsedUrl),
-      tags: editingSite.tags.map((tag) => tag.trim()).filter(Boolean).slice(0, 4),
+      tags: editingSite.tags
+        .map(tag => tag.trim())
+        .filter(Boolean)
+        .slice(0, 4),
     };
     setSavingSite(true);
     try {
@@ -1366,72 +2074,143 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ site: updatedSite }),
       });
-      const isJson = response.headers.get("content-type")?.includes("application/json") === true;
-      const payload = isJson ? await response.json().catch(() => ({})) as { success?: boolean; error?: string } : {};
+      const isJson =
+        response.headers.get("content-type")?.includes("application/json") ===
+        true;
+      const payload = isJson
+        ? ((await response.json().catch(() => ({}))) as {
+            success?: boolean;
+            error?: string;
+          })
+        : {};
       const cloudSaved = response.ok && payload.success === true;
-      if (!cloudSaved && !import.meta.env.DEV) throw new Error(payload.error || "D1 保存失败。");
-      setSites((current) => current.map((site) => site.id === updatedSite.id ? updatedSite : site));
+      if (!cloudSaved && !import.meta.env.DEV)
+        throw new Error(payload.error || "D1 保存失败。");
+      setSites(current =>
+        current.map(site => (site.id === updatedSite.id ? updatedSite : site))
+      );
       setEditingSite(null);
       setStorageMode(cloudSaved ? "cloud" : "local");
-      toast.success(cloudSaved ? "入口修改已同步。" : "入口修改已保存到当前设备。");
+      toast.success(
+        cloudSaved ? "入口修改已同步。" : "入口修改已保存到当前设备。"
+      );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存入口修改失败。");
+      toast.error(
+        error instanceof Error ? error.message : "保存入口修改失败。"
+      );
     } finally {
       setSavingSite(false);
     }
   };
 
-  const activeLabel = categoryMeta.find((category) => category.id === displayedCategory)?.label || "全部入口";
+  const activeLabel =
+    categoryMeta.find(category => category.id === displayedCategory)?.label ||
+    "全部入口";
   const today = new Date();
   const todayLabel = `${String(today.getMonth() + 1).padStart(2, "0")}/${String(today.getDate()).padStart(2, "0")} 星期${["日", "一", "二", "三", "四", "五", "六"][today.getDay()]}`;
 
   const effectiveImageBrightness = backgroundImageAdaptive
-    ? Math.max(30, Math.round(backgroundImageBrightness * (skin === "dark" ? .72 : 1.04)))
+    ? Math.max(
+        30,
+        Math.round(backgroundImageBrightness * (skin === "dark" ? 0.72 : 1.04))
+      )
     : backgroundImageBrightness;
   const effectiveImageContrast = backgroundImageAdaptive
-    ? Math.round(backgroundImageContrast * (skin === "dark" ? 1.08 : .94))
+    ? Math.round(backgroundImageContrast * (skin === "dark" ? 1.08 : 0.94))
     : backgroundImageContrast;
 
   return (
-    <div className={`app-shell skin-${skin} background-${backgroundMode} ${backgroundImage ? "has-background-image" : ""} ${backgroundImageAdaptive ? "background-image-adaptive" : ""} ${editMode ? "app-editing" : ""}`} style={{ "--custom-background": customBackground } as CSSProperties}>
-      {backgroundImage && <><div className="workspace-background-image" style={{ backgroundImage: `url(${backgroundImage})`, "--background-image-blur": `${backgroundImageBlur}px`, "--background-image-brightness": `${effectiveImageBrightness}%`, "--background-image-contrast": `${effectiveImageContrast}%` } as CSSProperties} aria-hidden="true" /><div className="workspace-background-overlay" aria-hidden="true" /></>}
+    <div
+      className={`app-shell skin-${skin} background-${backgroundMode} ${backgroundImage ? "has-background-image" : ""} ${backgroundImageAdaptive ? "background-image-adaptive" : ""} ${editMode ? "app-editing" : ""}`}
+      style={{ "--custom-background": customBackground } as CSSProperties}
+    >
+      {backgroundImage && (
+        <>
+          <div
+            className="workspace-background-image"
+            style={
+              {
+                backgroundImage: `url(${backgroundImage})`,
+                "--background-image-blur": `${backgroundImageBlur}px`,
+                "--background-image-brightness": `${effectiveImageBrightness}%`,
+                "--background-image-contrast": `${effectiveImageContrast}%`,
+              } as CSSProperties
+            }
+            aria-hidden="true"
+          />
+          <div className="workspace-background-overlay" aria-hidden="true" />
+        </>
+      )}
       <div className="ambient-orb orb-one" />
       <div className="ambient-orb orb-two" />
       <div className="ambient-orb orb-three" />
       <div className="grain-overlay" />
 
-      <button className="mobile-nav-trigger glass-button" onClick={() => setMobileNavOpen(true)} aria-label="打开分类导航">
+      <button
+        ref={mobileNavTriggerRef}
+        type="button"
+        className="mobile-nav-trigger glass-button"
+        onClick={() => setMobileNavOpen(true)}
+        aria-label="打开分类导航"
+        aria-controls="mobile-category-sidebar"
+        aria-expanded={mobileNavOpen}
+      >
         <Menu size={18} />
         <span>目录</span>
       </button>
 
-      <aside className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}>
+      <aside
+        id="mobile-category-sidebar"
+        className={`sidebar ${mobileNavOpen ? "sidebar-open" : ""} ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
+        aria-label="分类导航"
+      >
         <div className="sidebar-topline" />
         <div className="brand-lockup">
           <LogoMark />
           <div>
-            <div className="brand-wordmark">tidal<span>/</span>index</div>
+            <div className="brand-wordmark">
+              tidal<span>/</span>index
+            </div>
             <p>你的私人书签</p>
           </div>
           <button
             className="sidebar-collapse-button"
-            onClick={() => setSidebarCollapsed((current) => !current)}
+            onClick={() => setSidebarCollapsed(current => !current)}
             aria-label={sidebarCollapsed ? "展开侧边栏" : "收缩侧边栏"}
             aria-expanded={!sidebarCollapsed}
             title={sidebarCollapsed ? "展开侧边栏" : "收缩侧边栏"}
           >
-            {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            {sidebarCollapsed ? (
+              <PanelLeftOpen size={16} />
+            ) : (
+              <PanelLeftClose size={16} />
+            )}
           </button>
-          <button className="mobile-close glass-button" onClick={() => setMobileNavOpen(false)} aria-label="关闭分类导航">
+          <button
+            ref={mobileNavCloseRef}
+            type="button"
+            className="mobile-close glass-button"
+            onClick={() => setMobileNavOpen(false)}
+            aria-label="关闭分类导航"
+          >
             <X size={17} />
           </button>
         </div>
 
         <div className="sidebar-section-label">收进你的工作台</div>
-        <nav ref={categoryNavRef} className="category-nav" aria-label="网站分类">
-          {categoryMeta.map((category) => {
+        <nav
+          ref={categoryNavRef}
+          className="category-nav"
+          aria-label="网站分类"
+        >
+          {categoryMeta.map(category => {
             const isActive = category.id === activeCategory;
-            const count = category.id === "all" ? sites.length : category.id === "favorites" ? favorites.length : categoryCounts[category.id] || 0;
+            const count =
+              category.id === "all"
+                ? sites.length
+                : category.id === "favorites"
+                  ? favorites.length
+                  : categoryCounts[category.id] || 0;
             return (
               <button
                 key={category.id}
@@ -1449,336 +2228,1383 @@ export default function Home({ isAuthenticated, onLogin, onLogout }: { isAuthent
         </nav>
 
         <div className="sidebar-footer">
-          <div className="sync-status"><span className="status-pulse" /> {!isAuthenticated ? `公开只读 · ${sites.length} 个入口` : storageMode === "cloud" ? (sites.length ? `D1 已同步 · ${sites.length} 个入口` : "D1 已连接 · 暂无入口") : storageMode === "connecting" ? "正在连接 D1" : "本地缓存模式"}</div>
-          <p>{lastSyncedLabel ? `最近同步于 ${lastSyncedLabel}` : "等待首次云端同步"}</p>
+          <div className="sync-status">
+            <span className="status-pulse" />{" "}
+            {!isAuthenticated
+              ? `公开只读 · ${sites.length} 个入口`
+              : storageMode === "cloud"
+                ? sites.length
+                  ? `D1 已同步 · ${sites.length} 个入口`
+                  : "D1 已连接 · 暂无入口"
+                : storageMode === "connecting"
+                  ? "正在连接 D1"
+                  : "本地缓存模式"}
+          </div>
+          <p>
+            {lastSyncedLabel
+              ? `最近同步于 ${lastSyncedLabel}`
+              : "等待首次云端同步"}
+          </p>
         </div>
       </aside>
 
-      {mobileNavOpen && <button className="sidebar-backdrop" aria-label="关闭导航" onClick={() => setMobileNavOpen(false)} />}
+      {mobileNavOpen && (
+        <button
+          type="button"
+          className="sidebar-backdrop"
+          aria-label="关闭导航"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
 
       <main className="main-content">
         <header className="topbar">
-          <div className="breadcrumb"><span>工作台</span><ChevronRight size={14} /><strong>{activeLabel}</strong></div>
+          <div className="breadcrumb">
+            <span>工作台</span>
+            <ChevronRight size={14} />
+            <strong>{activeLabel}</strong>
+          </div>
           <div className="topbar-actions">
-            <button className="topbar-button" onClick={() => setSkin(skin === "dark" ? "light" : "dark")} aria-label="切换主题">
+            <button
+              className="topbar-button"
+              onClick={() => changeSkin(skin === "dark" ? "light" : "dark")}
+              aria-label="切换主题"
+            >
               {skin === "dark" ? <Sun size={16} /> : <Moon size={16} />}
               <span>{skin === "dark" ? "日间" : "夜间"}</span>
             </button>
             {isAuthenticated && (
               <>
-                <button className={`topbar-button edit-mode-button ${editMode ? "edit-mode-button-active" : ""}`} onClick={editMode ? finishEditMode : startEditMode} aria-pressed={editMode}>
+                <button
+                  className={`topbar-button edit-mode-button ${editMode ? "edit-mode-button-active" : ""}`}
+                  onClick={editMode ? finishEditMode : startEditMode}
+                  aria-pressed={editMode}
+                >
                   {editMode ? <Check size={16} /> : <Pencil size={15} />}
                   <span>{editMode ? "完成" : "编辑"}</span>
                 </button>
-                <button className="topbar-button topbar-settings" onClick={openSettings}>
+                <button
+                  className="topbar-button topbar-settings"
+                  onClick={openSettings}
+                >
                   <Settings2 size={16} />
                   <span>设置</span>
                 </button>
               </>
             )}
-            {isAuthenticated
-              ? <button className="profile-chip profile-logout" onClick={onLogout} aria-label="退出登录" title="退出登录"><span>Admin</span><LogOut size={13} /></button>
-              : <button className="profile-chip profile-logout" onClick={onLogin} aria-label="登录管理" title="登录管理"><span>登录</span><LogIn size={13} /></button>}
+            {isAuthenticated ? (
+              <button
+                className="profile-chip profile-logout"
+                onClick={onLogout}
+                aria-label="退出登录"
+                title="退出登录"
+              >
+                <span>Admin</span>
+                <LogOut size={13} />
+              </button>
+            ) : (
+              <button
+                className="profile-chip profile-logout"
+                onClick={onLogin}
+                aria-label="登录管理"
+                title="登录管理"
+              >
+                <span>登录</span>
+                <LogIn size={13} />
+              </button>
+            )}
           </div>
         </header>
 
         <section className="hero-section">
           <div className="hero-copy">
-            <div className="eyebrow"><span className="eyebrow-line" /> PERSONAL INDEX / 01</div>
-            <h1>让每天要用的网站，<em>随手可得。</em></h1>
+            <div className="eyebrow">
+              <span className="eyebrow-line" /> PERSONAL INDEX / 01
+            </div>
+            <h1>
+              让每天要用的网站，<em>随手可得。</em>
+            </h1>
             <p>把分散的网站汇聚成一个有呼吸感的个人导航页。</p>
-            <div className="hero-meta"><span><span className="live-dot" /> {sites.length} 个入口已就绪</span></div>
+            <div className="hero-meta">
+              <span>
+                <span className="live-dot" /> {sites.length} 个入口已就绪
+              </span>
+            </div>
           </div>
           <div className="hero-visual" aria-hidden="true">
-            <div className="hero-visual-note"><span>THE QUIET WEB</span><strong>{todayLabel}</strong></div>
+            <div className="hero-visual-note">
+              <span>THE QUIET WEB</span>
+              <strong>{todayLabel}</strong>
+            </div>
           </div>
         </section>
 
         <section className="search-panel glass-panel">
-          <div className="search-icon-wrap"><Search size={20} strokeWidth={1.8} /></div>
-          <input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索网站、分类或标签…" aria-label="搜索网站" />
-          <div className="search-shortcut"><Keyboard size={13} /><span>/</span></div>
-          {query && <button className="clear-search" onClick={() => setQuery("")} aria-label="清除搜索"><X size={15} /></button>}
+          <div className="search-icon-wrap">
+            <Search size={20} strokeWidth={1.8} />
+          </div>
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={event => setQuery(event.target.value)}
+            placeholder="搜索网站、分类或标签…"
+            aria-label="搜索网站"
+          />
+          <div className="search-shortcut">
+            <Keyboard size={13} />
+            <span>/</span>
+          </div>
+          {query && (
+            <button
+              className="clear-search"
+              onClick={() => setQuery("")}
+              aria-label="清除搜索"
+            >
+              <X size={15} />
+            </button>
+          )}
         </section>
 
         <div className="workspace-lower-section">
-        <section className="overview-row">
-          <div className="overview-intro">
-            <p className="section-kicker">CURATED SPACE</p>
-            <div className="overview-title-row"><h2>{activeLabel}</h2><span className="result-count">{filteredSites.length.toString().padStart(2, "0")} sites</span></div>
-          </div>
-          {isAuthenticated && <button className="add-inline-button" onClick={openAddSite}><Plus size={15} /> 添加入口</button>}
-        </section>
-
-        <div className={`edit-mode-hint-slot ${editMode ? "edit-mode-hint-slot-visible" : ""}`} aria-hidden={!editMode}>
-          {(editMode || editHintExiting) && (
-            <div className={`edit-mode-hint ${editHintExiting ? "edit-mode-hint-exiting" : ""}`} role="status">
-              <span className="edit-mode-pulse" />
-              <strong>编辑模式</strong>
-              <span>按住并拖动整张卡片调整顺序，也可修改或删除入口。</span>
-              <button onClick={finishEditMode} disabled={editHintExiting}><Check size={14} /> 完成</button>
+          <section className="overview-row">
+            <div className="overview-intro">
+              <p className="section-kicker">CURATED SPACE</p>
+              <div className="overview-title-row">
+                <h2>{activeLabel}</h2>
+                <span className="result-count">
+                  {filteredSites.length.toString().padStart(2, "0")} sites
+                </span>
+              </div>
             </div>
-          )}
-        </div>
-
-        <div className="mobile-category-scroll" aria-label="快速分类">
-          {categoryMeta.map((category) => <button key={category.id} className={activeCategory === category.id ? "mobile-category-active" : ""} onClick={() => selectCategory(category.id)}>{category.label}</button>)}
-        </div>
-
-        <section key={displayedCategory} className={`site-grid grid-${viewMode} ${editMode ? "site-grid-editing" : ""} category-transition-${categoryTransitionPhase}`} aria-live="polite">
-          {filteredSites.map((site, index) => {
-            const isFavorite = favorites.includes(site.id);
-            return (
-              <article
-                key={site.id}
-                data-site-id={site.id}
-                style={{ "--site-index": Math.min(index, 6) } as CSSProperties}
-                tabIndex={editMode ? 0 : undefined}
-                aria-grabbed={editMode ? draggingSiteId === site.id : undefined}
-                onPointerDown={(event) => beginSiteDrag(event, site.id)}
-                onPointerMove={continueSiteDrag}
-                onPointerUp={endSiteDrag}
-                onPointerCancel={endSiteDrag}
-                onKeyDown={(event) => {
-                  if (!editMode) return;
-                  if (["ArrowLeft", "ArrowUp"].includes(event.key)) { event.preventDefault(); moveSiteByOffset(site.id, -1); }
-                  if (["ArrowRight", "ArrowDown"].includes(event.key)) { event.preventDefault(); moveSiteByOffset(site.id, 1); }
-                }}
-                className={`site-card glass-panel ${site.featured ? "site-card-featured" : ""} ${index === 1 ? "site-card-tall" : ""} ${editMode ? "site-card-editing" : ""} ${draggingSiteId === site.id ? "site-card-dragging" : ""}`}
-              >
-                {!editMode && <a className="site-card-link" href={site.url} target="_blank" rel="noreferrer" aria-label={`打开 ${site.name}`} />}
-                <div className="site-card-topline">
-                  <SiteIcon site={site} />
-                  {isAuthenticated && (editMode ? (
-                    <div className="site-edit-controls">
-                      <button className="site-edit-button" onClick={() => openSiteEditor(site)} aria-label={`编辑 ${site.name}`} title="编辑入口"><Pencil size={14} /></button>
-                      <button className="site-delete-button" onClick={() => void deleteSite(site)} disabled={savingSite} aria-label={`删除 ${site.name}`} title="删除入口"><Trash2 size={14} /></button>
-                    </div>
-                  ) : (
-                    <button type="button" className={`favorite-button ${isFavorite ? "favorite-active" : ""}`} onClick={(event) => toggleFavorite(event, site)} aria-label={isFavorite ? `取消收藏 ${site.name}` : `收藏 ${site.name}`} title={isFavorite ? "取消收藏" : "加入收藏"}>
-                      <Bookmark size={16} fill={isFavorite ? "currentColor" : "none"} />
-                    </button>
-                  ))}
-                </div>
-                <div className="site-card-content">
-                  <div className="site-card-heading"><h3>{site.name}</h3></div>
-                  {showDescriptions && <p>{site.description}</p>}
-                </div>
-                <div className="site-card-bottom"><div className="tag-list">{site.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><span className="category-label">{categoryNames[site.category]?.trim() || site.categoryLabel}</span></div>
-              </article>
-            );
-          })}
-
-          {filteredSites.length === 0 && (
-            <div className="empty-state glass-panel">
-              <div className="empty-art"><Search size={26} /></div>
-              <div><p className="section-kicker">NO SIGNAL / 00</p><h3>{activeCategory === "favorites" && !query ? "还没有收藏任何入口" : !sites.length && !query ? "还没有添加任何入口" : "还没有找到这个入口"}</h3><p>{activeCategory === "favorites" && !query ? "点击任意卡片右上角的书签，就能在这里快速找到它。" : !sites.length && !query ? "先创建一个分类，再添加你的第一个网站。" : "换个关键词试试，或者把它添加到你的导航里。"}</p></div>
-              {activeCategory === "favorites" && !query
-                ? <button className="primary-button" onClick={() => selectCategory("all")}><Grid2X2 size={15} /> 浏览全部入口</button>
-                : isAuthenticated
-                  ? <button className="primary-button" onClick={openAddSite}><Plus size={15} /> {contentCategories.length ? "添加网站" : "创建分类"}</button>
-                  : <button className="primary-button" onClick={onLogin}><LogIn size={15} /> 登录后管理</button>}
-            </div>
-          )}
-        </section>
-
-        <div className="workspace-bottom">
-          <section className="bottom-strip glass-panel">
-            <div className="bottom-strip-copy"><p className="section-kicker">TIDAL NOTE / 04</p><h3>收藏一站，少一次搜索。</h3></div>
-            <div className="bottom-strip-help"><CircleHelp size={16} /><span>快捷键 / 可随时聚焦搜索</span></div>
+            {isAuthenticated && (
+              <button className="add-inline-button" onClick={openAddSite}>
+                <Plus size={15} /> 添加入口
+              </button>
+            )}
           </section>
-          <footer className="main-footer"><span>tidal，你的书签收藏夹。</span><span>V{packageJson.version}</span></footer>
-        </div>
+
+          <div
+            className={`edit-mode-hint-slot ${editMode ? "edit-mode-hint-slot-visible" : ""}`}
+            aria-hidden={!editMode}
+          >
+            {(editMode || editHintExiting) && (
+              <div
+                className={`edit-mode-hint ${editHintExiting ? "edit-mode-hint-exiting" : ""}`}
+                role="status"
+              >
+                <span className="edit-mode-pulse" />
+                <strong>编辑模式</strong>
+                <span>按住并拖动整张卡片调整顺序，也可修改或删除入口。</span>
+                <button onClick={finishEditMode} disabled={editHintExiting}>
+                  <Check size={14} /> 完成
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="mobile-category-scroll" aria-label="快速分类">
+            {categoryMeta.map(category => (
+              <button
+                key={category.id}
+                className={
+                  activeCategory === category.id ? "mobile-category-active" : ""
+                }
+                onClick={() => selectCategory(category.id)}
+              >
+                {category.label}
+              </button>
+            ))}
+          </div>
+
+          <section
+            key={displayedCategory}
+            className={`site-grid grid-${viewMode} ${editMode ? "site-grid-editing" : ""} category-transition-${categoryTransitionPhase}`}
+            aria-live="polite"
+          >
+            {filteredSites.map((site, index) => {
+              const isFavorite = favorites.includes(site.id);
+              return (
+                <article
+                  key={site.id}
+                  data-site-id={site.id}
+                  style={
+                    { "--site-index": Math.min(index, 6) } as CSSProperties
+                  }
+                  tabIndex={editMode ? 0 : undefined}
+                  aria-grabbed={
+                    editMode ? draggingSiteId === site.id : undefined
+                  }
+                  onPointerDown={event => beginSiteDrag(event, site.id)}
+                  onPointerMove={continueSiteDrag}
+                  onPointerUp={endSiteDrag}
+                  onPointerCancel={endSiteDrag}
+                  onKeyDown={event => {
+                    if (!editMode) return;
+                    if (["ArrowLeft", "ArrowUp"].includes(event.key)) {
+                      event.preventDefault();
+                      moveSiteByOffset(site.id, -1);
+                    }
+                    if (["ArrowRight", "ArrowDown"].includes(event.key)) {
+                      event.preventDefault();
+                      moveSiteByOffset(site.id, 1);
+                    }
+                  }}
+                  className={`site-card glass-panel ${site.featured ? "site-card-featured" : ""} ${index === 1 ? "site-card-tall" : ""} ${editMode ? "site-card-editing" : ""} ${draggingSiteId === site.id ? "site-card-dragging" : ""}`}
+                  title={viewMode === "mini" ? site.name : undefined}
+                >
+                  {!editMode && (
+                    <a
+                      className="site-card-link"
+                      href={site.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`打开 ${site.name}`}
+                    />
+                  )}
+                  <div className="site-card-topline">
+                    <SiteIcon site={site} />
+                    {isAuthenticated &&
+                      (editMode ? (
+                        <div className="site-edit-controls">
+                          <button
+                            className="site-edit-button"
+                            onClick={() => openSiteEditor(site)}
+                            aria-label={`编辑 ${site.name}`}
+                            title="编辑入口"
+                          >
+                            <Pencil size={14} />
+                          </button>
+                          <button
+                            className="site-delete-button"
+                            onClick={() => void deleteSite(site)}
+                            disabled={savingSite}
+                            aria-label={`删除 ${site.name}`}
+                            title="删除入口"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className={`favorite-button ${isFavorite ? "favorite-active" : ""}`}
+                          onClick={event => toggleFavorite(event, site)}
+                          aria-label={
+                            isFavorite
+                              ? `取消收藏 ${site.name}`
+                              : `收藏 ${site.name}`
+                          }
+                          title={isFavorite ? "取消收藏" : "加入收藏"}
+                        >
+                          <Bookmark
+                            size={16}
+                            fill={isFavorite ? "currentColor" : "none"}
+                          />
+                        </button>
+                      ))}
+                  </div>
+                  <div className="site-card-content">
+                    <div className="site-card-heading">
+                      <h3>{site.name}</h3>
+                    </div>
+                    {showDescriptions && <p>{site.description}</p>}
+                  </div>
+                  <div className="site-card-bottom">
+                    <div className="tag-list">
+                      {site.tags.map(tag => (
+                        <span key={tag}>{tag}</span>
+                      ))}
+                    </div>
+                    <span className="category-label">
+                      {categoryNames[site.category]?.trim() ||
+                        site.categoryLabel}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
+
+            {filteredSites.length === 0 && (
+              <div className="empty-state glass-panel">
+                <div className="empty-art">
+                  <Search size={26} />
+                </div>
+                <div>
+                  <p className="section-kicker">NO SIGNAL / 00</p>
+                  <h3>
+                    {activeCategory === "favorites" && !query
+                      ? "还没有收藏任何入口"
+                      : !sites.length && !query
+                        ? "还没有添加任何入口"
+                        : "还没有找到这个入口"}
+                  </h3>
+                  <p>
+                    {activeCategory === "favorites" && !query
+                      ? "点击任意卡片右上角的书签，就能在这里快速找到它。"
+                      : !sites.length && !query
+                        ? "先创建一个分类，再添加你的第一个网站。"
+                        : "换个关键词试试，或者把它添加到你的导航里。"}
+                  </p>
+                </div>
+                {activeCategory === "favorites" && !query ? (
+                  <button
+                    className="primary-button"
+                    onClick={() => selectCategory("all")}
+                  >
+                    <Grid2X2 size={15} /> 浏览全部入口
+                  </button>
+                ) : isAuthenticated ? (
+                  <button className="primary-button" onClick={openAddSite}>
+                    <Plus size={15} />{" "}
+                    {contentCategories.length ? "添加网站" : "创建分类"}
+                  </button>
+                ) : (
+                  <button className="primary-button" onClick={onLogin}>
+                    <LogIn size={15} /> 登录后管理
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
+
+          <div className="workspace-bottom">
+            <section className="bottom-strip glass-panel">
+              <div className="bottom-strip-copy">
+                <p className="section-kicker">TIDAL NOTE / 04</p>
+                <h3>收藏一站，少一次搜索。</h3>
+              </div>
+              <div className="bottom-strip-help">
+                <CircleHelp size={16} />
+                <span>快捷键 / 可随时聚焦搜索</span>
+              </div>
+            </section>
+            <footer className="main-footer">
+              <span>tidal，你的书签收藏夹。</span>
+              <span>V{packageJson.version}</span>
+            </footer>
+          </div>
         </div>
       </main>
 
       {settingsOpen && isAuthenticated && (
-        <div className={`drawer-layer ${settingsClosing ? "drawer-layer-closing" : ""}`} role="dialog" aria-modal="true" aria-label="导航设置">
-          <button className="drawer-backdrop" onClick={closeSettings} aria-label="关闭设置" />
+        <div
+          className={`drawer-layer ${settingsClosing ? "drawer-layer-closing" : ""}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label="导航设置"
+        >
+          <button
+            className="drawer-backdrop"
+            onClick={closeSettings}
+            aria-label="关闭设置"
+          />
           {settingsPreviewSite && settingsPreviewRect && (
             <div
               className={`settings-site-preview-frame grid-${viewMode}`}
-              style={{ left: settingsPreviewRect.left, top: settingsPreviewRect.top, width: settingsPreviewRect.width, height: settingsPreviewRect.height }}
+              style={{
+                left: settingsPreviewRect.left,
+                top: settingsPreviewRect.top,
+                width: settingsPreviewRect.width,
+                height: settingsPreviewRect.height,
+              }}
               aria-hidden="true"
             >
-              <article className={`site-card glass-panel ${settingsPreviewSite.featured ? "site-card-featured" : ""}`}>
+              <article
+                className={`site-card glass-panel ${settingsPreviewSite.featured ? "site-card-featured" : ""}`}
+              >
                 <div className="site-card-topline">
                   <SiteIcon site={settingsPreviewSite} />
-                  <span className={`favorite-button ${favorites.includes(settingsPreviewSite.id) ? "favorite-active" : ""}`}><Bookmark size={16} fill={favorites.includes(settingsPreviewSite.id) ? "currentColor" : "none"} /></span>
+                  <span
+                    className={`favorite-button ${favorites.includes(settingsPreviewSite.id) ? "favorite-active" : ""}`}
+                  >
+                    <Bookmark
+                      size={16}
+                      fill={
+                        favorites.includes(settingsPreviewSite.id)
+                          ? "currentColor"
+                          : "none"
+                      }
+                    />
+                  </span>
                 </div>
-                <div className="site-card-content"><div className="site-card-heading"><h3>{settingsPreviewSite.name}</h3></div>{showDescriptions && <p>{settingsPreviewSite.description}</p>}</div>
-                <div className="site-card-bottom"><div className="tag-list">{settingsPreviewSite.tags.map((tag) => <span key={tag}>{tag}</span>)}</div><span className="category-label">{categoryNames[settingsPreviewSite.category]?.trim() || settingsPreviewSite.categoryLabel}</span></div>
+                <div className="site-card-content">
+                  <div className="site-card-heading">
+                    <h3>{settingsPreviewSite.name}</h3>
+                  </div>
+                  {showDescriptions && <p>{settingsPreviewSite.description}</p>}
+                </div>
+                <div className="site-card-bottom">
+                  <div className="tag-list">
+                    {settingsPreviewSite.tags.map(tag => (
+                      <span key={tag}>{tag}</span>
+                    ))}
+                  </div>
+                  <span className="category-label">
+                    {categoryNames[settingsPreviewSite.category]?.trim() ||
+                      settingsPreviewSite.categoryLabel}
+                  </span>
+                </div>
               </article>
             </div>
           )}
           <aside className="settings-drawer">
-            <div className="drawer-header"><div><p className="section-kicker">PERSONALIZE / 02</p><h2>导航设置</h2></div><button className="drawer-close" onClick={closeSettings} aria-label="关闭设置"><X size={18} /></button></div>
+            <div className="drawer-header">
+              <div>
+                <p className="section-kicker">PERSONALIZE / 02</p>
+                <h2>导航设置</h2>
+              </div>
+              <button
+                className="drawer-close"
+                onClick={closeSettings}
+                aria-label="关闭设置"
+              >
+                <X size={18} />
+              </button>
+            </div>
             <div className="drawer-content">
-              <section className="setting-section"><label className="setting-label">工作台名称</label><input className="setting-input" value={siteName} onChange={(event) => setSiteName(event.target.value)} /><p className="setting-hint">将同步到使用同一站点密码登录的设备。</p></section>
-              <section className="setting-section"><label className="setting-label">界面外观</label><div className="segmented-control"><button className={skin === "dark" ? "segment-active" : ""} onClick={() => setSkin("dark")}><Moon size={14} /> 深色石墨</button><button className={skin === "light" ? "segment-active" : ""} onClick={() => setSkin("light")}><Sun size={14} /> 雾白模式</button></div></section>
-              <section className="setting-section background-setting">
-                <div className="setting-row"><div><label className="setting-label">页面背景</label><p className="setting-hint">底色和背景图片也会同步到其他设备。</p></div><span className="background-status">{backgroundImage ? "图片" : backgroundMode === "custom" ? "自定义" : "预设"}</span></div>
-                <div className="background-options">
-                  <button type="button" className={`background-option background-option-mist ${backgroundMode === "mist" ? "background-option-active" : ""}`} onClick={() => setBackgroundMode("mist")}><span /><strong>雾白</strong><small>中性留白</small></button>
-                  <button type="button" className={`background-option background-option-blue ${backgroundMode === "blue" ? "background-option-active" : ""}`} onClick={() => setBackgroundMode("blue")}><span /><strong>静谧蓝</strong><small>系统蓝光</small></button>
-                  <button type="button" className={`background-option background-option-midnight ${backgroundMode === "midnight" ? "background-option-active" : ""}`} onClick={() => setBackgroundMode("midnight")}><span /><strong>午夜</strong><small>深石墨</small></button>
+              <section className="setting-section">
+                <label className="setting-label">工作台名称</label>
+                <input
+                  className="setting-input"
+                  value={siteName}
+                  onChange={event => setSiteName(event.target.value)}
+                />
+                <p className="setting-hint">
+                  将同步到使用同一站点密码登录的设备。
+                </p>
+              </section>
+              <section className="setting-section">
+                <label className="setting-label">界面外观</label>
+                <div className="segmented-control">
+                  <button
+                    className={skin === "dark" ? "segment-active" : ""}
+                    onClick={() => changeSkin("dark")}
+                  >
+                    <Moon size={14} /> 深色石墨
+                  </button>
+                  <button
+                    className={skin === "light" ? "segment-active" : ""}
+                    onClick={() => changeSkin("light")}
+                  >
+                    <Sun size={14} /> 雾白模式
+                  </button>
                 </div>
-                <div className="custom-background-row"><div><strong>自定义颜色</strong><small>作为图片加载前的底色</small></div><label className="color-picker" title="选择自定义背景色"><input type="color" value={customBackground} onChange={(event) => { setCustomBackground(event.target.value); setBackgroundMode("custom"); }} aria-label="选择自定义背景色" /><span style={{ background: customBackground }} /></label></div>
+              </section>
+              <section className="setting-section background-setting">
+                <div className="setting-row">
+                  <div>
+                    <label className="setting-label">页面背景</label>
+                    <p className="setting-hint">
+                      底色和背景图片也会同步到其他设备。
+                    </p>
+                  </div>
+                  <span className="background-status">
+                    {backgroundImage
+                      ? "图片"
+                      : backgroundMode === "custom"
+                        ? "自定义"
+                        : "预设"}
+                  </span>
+                </div>
+                <div className="background-options">
+                  <button
+                    type="button"
+                    className={`background-option background-option-mist ${backgroundMode === "mist" ? "background-option-active" : ""}`}
+                    onClick={() => setBackgroundMode("mist")}
+                  >
+                    <span />
+                    <strong>雾白</strong>
+                    <small>中性留白</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`background-option background-option-blue ${backgroundMode === "blue" ? "background-option-active" : ""}`}
+                    onClick={() => setBackgroundMode("blue")}
+                  >
+                    <span />
+                    <strong>静谧蓝</strong>
+                    <small>系统蓝光</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`background-option background-option-midnight ${backgroundMode === "midnight" ? "background-option-active" : ""}`}
+                    onClick={() => setBackgroundMode("midnight")}
+                  >
+                    <span />
+                    <strong>午夜</strong>
+                    <small>深石墨</small>
+                  </button>
+                </div>
+                <div className="custom-background-row">
+                  <div>
+                    <strong>自定义颜色</strong>
+                    <small>作为图片加载前的底色</small>
+                  </div>
+                  <label className="color-picker" title="选择自定义背景色">
+                    <input
+                      type="color"
+                      value={customBackground}
+                      onChange={event => {
+                        setCustomBackground(event.target.value);
+                        setBackgroundMode("custom");
+                      }}
+                      aria-label="选择自定义背景色"
+                    />
+                    <span style={{ background: customBackground }} />
+                  </label>
+                </div>
                 <div className="background-image-editor">
-                  <div className="background-image-heading"><div><strong>背景图片</strong><small>支持 JPG、PNG、WebP，最大 3MB</small></div><div className="background-image-actions"><label className="background-image-upload"><input type="file" accept="image/*" onChange={(event) => { uploadBackgroundImage(event.target.files?.[0]); event.target.value = ""; }} /><ImagePlus size={13} /><span>{backgroundImage ? "更换" : "选择图片"}</span></label>{backgroundImage && <button type="button" className="background-image-remove" onClick={clearBackgroundImage} aria-label="清除背景图片"><Trash2 size={13} /> 清除</button>}</div></div>
+                  <div className="background-image-heading">
+                    <div>
+                      <strong>背景图片</strong>
+                      <small>支持 JPG、PNG、WebP，最大 3MB</small>
+                    </div>
+                    <div className="background-image-actions">
+                      <label className="background-image-upload">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={event => {
+                            uploadBackgroundImage(event.target.files?.[0]);
+                            event.target.value = "";
+                          }}
+                        />
+                        <ImagePlus size={13} />
+                        <span>{backgroundImage ? "更换" : "选择图片"}</span>
+                      </label>
+                      {backgroundImage && (
+                        <button
+                          type="button"
+                          className="background-image-remove"
+                          onClick={clearBackgroundImage}
+                          aria-label="清除背景图片"
+                        >
+                          <Trash2 size={13} /> 清除
+                        </button>
+                      )}
+                    </div>
+                  </div>
                   {backgroundImage && (
                     <>
-                      <div className={`background-image-preview skin-${skin}`}><div style={{ backgroundImage: `url(${backgroundImage})`, filter: `blur(${Math.min(backgroundImageBlur, 8)}px) brightness(${effectiveImageBrightness}%) contrast(${effectiveImageContrast}%)` }} /><span>{skin === "dark" ? "暗黑模式预览" : "明亮模式预览"}</span></div>
-                      <div className="background-filter-grid">
-                        <BackgroundSlider label="模糊" value={backgroundImageBlur} min={0} max={24} unit="px" onChange={setBackgroundImageBlur} />
-                        <BackgroundSlider label="亮度" value={backgroundImageBrightness} min={40} max={140} unit="%" onChange={setBackgroundImageBrightness} />
-                        <BackgroundSlider label="对比度" value={backgroundImageContrast} min={60} max={160} unit="%" onChange={setBackgroundImageContrast} />
+                      <div className={`background-image-preview skin-${skin}`}>
+                        <div
+                          style={{
+                            backgroundImage: `url(${backgroundImage})`,
+                            filter: `blur(${Math.min(backgroundImageBlur, 8)}px) brightness(${effectiveImageBrightness}%) contrast(${effectiveImageContrast}%)`,
+                          }}
+                        />
+                        <span>
+                          {skin === "dark" ? "暗黑模式预览" : "明亮模式预览"}
+                        </span>
                       </div>
-                      <div className="background-adaptive-row"><div><strong>自动适配界面模式</strong><small>暗黑模式压低亮度，明亮模式柔化对比度</small></div><button type="button" className={`toggle ${backgroundImageAdaptive ? "toggle-on" : ""}`} onClick={() => setBackgroundImageAdaptive((current) => !current)} aria-pressed={backgroundImageAdaptive} aria-label="自动适配明暗模式"><span /></button></div>
+                      <div className="background-filter-grid">
+                        <BackgroundSlider
+                          label="模糊"
+                          value={backgroundImageBlur}
+                          min={0}
+                          max={24}
+                          unit="px"
+                          onChange={setBackgroundImageBlur}
+                        />
+                        <BackgroundSlider
+                          label="亮度"
+                          value={backgroundImageBrightness}
+                          min={40}
+                          max={140}
+                          unit="%"
+                          onChange={setBackgroundImageBrightness}
+                        />
+                        <BackgroundSlider
+                          label="对比度"
+                          value={backgroundImageContrast}
+                          min={60}
+                          max={160}
+                          unit="%"
+                          onChange={setBackgroundImageContrast}
+                        />
+                      </div>
+                      <div className="background-adaptive-row">
+                        <div>
+                          <strong>自动适配界面模式</strong>
+                          <small>暗黑模式压低亮度，明亮模式柔化对比度</small>
+                        </div>
+                        <button
+                          type="button"
+                          className={`toggle ${backgroundImageAdaptive ? "toggle-on" : ""}`}
+                          onClick={() =>
+                            setBackgroundImageAdaptive(current => !current)
+                          }
+                          aria-pressed={backgroundImageAdaptive}
+                          aria-label="自动适配明暗模式"
+                        >
+                          <span />
+                        </button>
+                      </div>
                     </>
                   )}
                 </div>
               </section>
               <section className="setting-section category-settings">
                 <div className="setting-row category-settings-heading">
-                  <div><label className="setting-label">分类管理</label><p className="setting-hint">新增、编辑或拖动排序；默认分类不会显示在这里。</p></div>
-                  <button type="button" className="category-add-button" onClick={() => { setAddingCategory((current) => !current); setEditingCategoryId(null); setPendingDeleteCategoryId(null); }}><Plus size={13} /> 新增</button>
+                  <div>
+                    <label className="setting-label">分类管理</label>
+                    <p className="setting-hint">
+                      新增、编辑或拖动排序；默认分类不会显示在这里。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="category-add-button"
+                    onClick={() => {
+                      setAddingCategory(current => !current);
+                      setEditingCategoryId(null);
+                      setPendingDeleteCategoryId(null);
+                    }}
+                  >
+                    <Plus size={13} /> 新增
+                  </button>
                 </div>
                 {addingCategory && (
                   <div className="category-editor category-create-editor">
-                    <label>分类名称<input autoFocus value={newCategoryName} onChange={(event) => setNewCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") addCategory(); }} placeholder="例如：学习资料" maxLength={18} /></label>
-                    <div><span className="category-editor-label">分类图标</span><CategoryIconPicker value={newCategoryIcon} onChange={setNewCategoryIcon} /></div>
-                    <div className="category-editor-actions"><button type="button" onClick={() => { setAddingCategory(false); setNewCategoryName(""); }}>取消</button><button type="button" className="category-editor-primary" onClick={addCategory}><Plus size={12} /> 创建分类</button></div>
+                    <label>
+                      分类名称
+                      <input
+                        autoFocus
+                        value={newCategoryName}
+                        onChange={event =>
+                          setNewCategoryName(event.target.value)
+                        }
+                        onKeyDown={event => {
+                          if (event.key === "Enter") addCategory();
+                        }}
+                        placeholder="例如：学习资料"
+                        maxLength={18}
+                      />
+                    </label>
+                    <div>
+                      <span className="category-editor-label">分类图标</span>
+                      <CategoryIconPicker
+                        value={newCategoryIcon}
+                        onChange={setNewCategoryIcon}
+                      />
+                    </div>
+                    <div className="category-editor-actions">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddingCategory(false);
+                          setNewCategoryName("");
+                        }}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="category-editor-primary"
+                        onClick={addCategory}
+                      >
+                        <Plus size={12} /> 创建分类
+                      </button>
+                    </div>
                   </div>
                 )}
                 <div className="category-settings-list">
-                  {categoryMeta.filter((category) => !category.system).map((category) => {
-                    const count = category.id === "all" ? sites.length : category.id === "favorites" ? favorites.length : categoryCounts[category.id] || 0;
-                    const isEditing = editingCategoryId === category.id;
-                    const isPendingDelete = pendingDeleteCategoryId === category.id;
-                    return (
-                      <div
-                        className={`category-setting-item ${draggingCategoryId === category.id ? "category-setting-item-dragging" : ""} ${isEditing ? "category-setting-item-editing" : ""}`}
-                        key={category.id}
-                        data-category-id={category.id}
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={(event) => dropNativeCategory(event, category.id)}
-                      >
-                        <CategoryIcon category={category} />
-                        <div className="category-setting-copy"><strong>{category.label}</strong><span>{category.system ? "固定分类" : `${count} 个入口`}</span></div>
-                        <div className="category-setting-actions">
-                          <button type="button" className="category-edit-button" onClick={() => { setEditingCategoryId(isEditing ? null : category.id); setAddingCategory(false); setPendingDeleteCategoryId(null); }} aria-label={`编辑 ${category.label}`} title="编辑分类"><Pencil size={13} /></button>
-                          <button
-                            type="button"
-                            className="category-drag-handle"
-                            draggable
-                            onDragStart={(event) => beginNativeCategoryDrag(event, category.id)}
-                            onDragEnd={endCategoryDrag}
-                            onPointerDown={(event) => beginCategoryDrag(event, category.id)}
-                            onPointerMove={continueCategoryDrag}
-                            onPointerUp={endCategoryDrag}
-                            onPointerCancel={endCategoryDrag}
-                            aria-label={`拖动排序 ${category.label}`}
-                            title="拖动排序"
-                          ><GripVertical size={15} /></button>
-                        </div>
-                        {isEditing && (
-                          <div className="category-editor">
-                            <label>分类名称<input value={category.label} onChange={(event) => renameCategory(category.id, event.target.value)} onBlur={() => { if (!category.label.trim()) renameCategory(category.id, "未命名分类"); }} maxLength={18} /></label>
-                            <div><span className="category-editor-label">分类图标</span><CategoryIconPicker value={category.iconKey} onChange={(value) => setCategoryIcon(category.id, value)} /></div>
-                            <div className="category-editor-actions">
-                              {!category.system && !isPendingDelete && <button type="button" className="category-delete-button" onClick={() => setPendingDeleteCategoryId(category.id)}>删除分类</button>}
-                              {isPendingDelete && <div className="category-delete-confirm"><span>{count ? `${count} 个入口将移至其他分类。` : "确认删除这个分类？"}</span><button type="button" onClick={() => setPendingDeleteCategoryId(null)}>取消</button><button type="button" className="category-delete-confirm-button" onClick={() => deleteCategory(category.id)}>确认删除</button></div>}
-                              <button type="button" className="category-editor-primary" onClick={() => setEditingCategoryId(null)}><Check size={12} /> 完成</button>
-                            </div>
+                  {categoryMeta
+                    .filter(category => !category.system)
+                    .map(category => {
+                      const count =
+                        category.id === "all"
+                          ? sites.length
+                          : category.id === "favorites"
+                            ? favorites.length
+                            : categoryCounts[category.id] || 0;
+                      const isEditing = editingCategoryId === category.id;
+                      const isPendingDelete =
+                        pendingDeleteCategoryId === category.id;
+                      return (
+                        <div
+                          className={`category-setting-item ${draggingCategoryId === category.id ? "category-setting-item-dragging" : ""} ${isEditing ? "category-setting-item-editing" : ""}`}
+                          key={category.id}
+                          data-category-id={category.id}
+                          onDragOver={event => event.preventDefault()}
+                          onDrop={event =>
+                            dropNativeCategory(event, category.id)
+                          }
+                        >
+                          <CategoryIcon category={category} />
+                          <div className="category-setting-copy">
+                            <strong>{category.label}</strong>
+                            <span>
+                              {category.system ? "固定分类" : `${count} 个入口`}
+                            </span>
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                          <div className="category-setting-actions">
+                            <button
+                              type="button"
+                              className="category-edit-button"
+                              onClick={() => {
+                                setEditingCategoryId(
+                                  isEditing ? null : category.id
+                                );
+                                setAddingCategory(false);
+                                setPendingDeleteCategoryId(null);
+                              }}
+                              aria-label={`编辑 ${category.label}`}
+                              title="编辑分类"
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              className="category-drag-handle"
+                              draggable
+                              onDragStart={event =>
+                                beginNativeCategoryDrag(event, category.id)
+                              }
+                              onDragEnd={endCategoryDrag}
+                              onPointerDown={event =>
+                                beginCategoryDrag(event, category.id)
+                              }
+                              onPointerMove={continueCategoryDrag}
+                              onPointerUp={endCategoryDrag}
+                              onPointerCancel={endCategoryDrag}
+                              aria-label={`拖动排序 ${category.label}`}
+                              title="拖动排序"
+                            >
+                              <GripVertical size={15} />
+                            </button>
+                          </div>
+                          {isEditing && (
+                            <div className="category-editor">
+                              <label>
+                                分类名称
+                                <input
+                                  value={category.label}
+                                  onChange={event =>
+                                    renameCategory(
+                                      category.id,
+                                      event.target.value
+                                    )
+                                  }
+                                  onBlur={() => {
+                                    if (!category.label.trim())
+                                      renameCategory(category.id, "未命名分类");
+                                  }}
+                                  maxLength={18}
+                                />
+                              </label>
+                              <div>
+                                <span className="category-editor-label">
+                                  分类图标
+                                </span>
+                                <CategoryIconPicker
+                                  value={category.iconKey}
+                                  onChange={value =>
+                                    setCategoryIcon(category.id, value)
+                                  }
+                                />
+                              </div>
+                              <div className="category-editor-actions">
+                                {!category.system && !isPendingDelete && (
+                                  <button
+                                    type="button"
+                                    className="category-delete-button"
+                                    onClick={() =>
+                                      setPendingDeleteCategoryId(category.id)
+                                    }
+                                  >
+                                    删除分类
+                                  </button>
+                                )}
+                                {isPendingDelete && (
+                                  <div className="category-delete-confirm">
+                                    <span>
+                                      {count
+                                        ? `${count} 个入口将移至其他分类。`
+                                        : "确认删除这个分类？"}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setPendingDeleteCategoryId(null)
+                                      }
+                                    >
+                                      取消
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="category-delete-confirm-button"
+                                      onClick={() =>
+                                        deleteCategory(category.id)
+                                      }
+                                    >
+                                      确认删除
+                                    </button>
+                                  </div>
+                                )}
+                                <button
+                                  type="button"
+                                  className="category-editor-primary"
+                                  onClick={() => setEditingCategoryId(null)}
+                                >
+                                  <Check size={12} /> 完成
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                 </div>
               </section>
               <section className="setting-section bookmark-transfer-settings">
                 <div className="setting-row">
-                  <div><label className="setting-label">书签数据</label><p className="setting-hint">兼容本站和 WeTab 的 JSON 文件；导入时保留现有内容并按网址去重。</p></div>
-                  <span className="bookmark-transfer-count">{sites.length} 个</span>
+                  <div>
+                    <label className="setting-label">书签数据</label>
+                    <p className="setting-hint">
+                      兼容本站和 WeTab 的 JSON
+                      文件；导入时保留现有内容并按网址去重。
+                    </p>
+                  </div>
+                  <span className="bookmark-transfer-count">
+                    {sites.length} 个
+                  </span>
                 </div>
                 <input
                   ref={bookmarkImportRef}
                   className="bookmark-import-input"
                   type="file"
                   accept=".json,application/json"
-                  onChange={(event) => {
+                  onChange={event => {
                     void importBookmarks(event.target.files?.[0]);
                     event.target.value = "";
                   }}
                 />
                 <div className="bookmark-transfer-actions">
-                  <button type="button" onClick={exportBookmarks}><Download size={14} /> 导出书签</button>
-                  <button type="button" onClick={() => bookmarkImportRef.current?.click()} disabled={importingBookmarks}><Upload size={14} /> {importingBookmarks ? "导入中…" : "导入书签"}</button>
+                  <button type="button" onClick={exportBookmarks}>
+                    <Download size={14} /> 导出书签
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => bookmarkImportRef.current?.click()}
+                    disabled={importingBookmarks}
+                  >
+                    <Upload size={14} />{" "}
+                    {importingBookmarks ? "导入中…" : "导入书签"}
+                  </button>
                 </div>
               </section>
-              <section className="setting-section"><label className="setting-label">入口模块大小</label><div className="segmented-control"><button className={viewMode === "comfortable" ? "segment-active" : ""} onClick={() => setViewMode("comfortable")}><Grid2X2 size={14} /> 舒适</button><button className={viewMode === "dense" ? "segment-active" : ""} onClick={() => setViewMode("dense")}><LayoutList size={14} /> 紧凑</button><button className={viewMode === "icon" ? "segment-active" : ""} onClick={() => setViewMode("icon")}><Grid3X3 size={14} /> 小图标</button></div><p className="setting-hint">小图标模式仅显示图标、标题和分类。</p></section>
-              <section className="setting-section"><label className="setting-label">入口排序</label><div className="select-wrap"><select value={sortMode} onChange={(event) => setSortMode(event.target.value as SortMode)}><option value="curated">编辑精选顺序</option><option value="az">按名称排列</option></select><ChevronRight size={15} /></div></section>
-              <section className="setting-section"><div className="setting-row"><div><label className="setting-label">显示描述</label><p className="setting-hint">在网站卡片下显示一句简介。</p></div><button className={`toggle ${showDescriptions ? "toggle-on" : ""}`} onClick={() => setShowDescriptions(!showDescriptions)} aria-label="切换网站描述"><span /></button></div></section>
-              <section className="setting-preview"><div className="preview-image" /><div><p className="section-kicker">MATERIAL NOTE</p><h3>玻璃的透明度，给内容留出呼吸。</h3><p>分类、收藏和界面偏好会通过 D1 跨设备同步。</p></div></section>
+              <section className="setting-section">
+                <label className="setting-label">入口模块大小</label>
+                <div
+                  className={`segmented-control size-segmented-control size-segmented-${viewMode}`}
+                  role="group"
+                  aria-label="入口模块大小"
+                >
+                  <button
+                    type="button"
+                    className={viewMode === "large" ? "segment-active" : ""}
+                    aria-pressed={viewMode === "large"}
+                    aria-label="Large"
+                    onClick={() => setViewMode("large")}
+                  >
+                    <Grid2X2 size={14} />
+                    <span>Large</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={viewMode === "medium" ? "segment-active" : ""}
+                    aria-pressed={viewMode === "medium"}
+                    aria-label="Medium"
+                    onClick={() => setViewMode("medium")}
+                  >
+                    <LayoutList size={14} />
+                    <span>Medium</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={viewMode === "small" ? "segment-active" : ""}
+                    aria-pressed={viewMode === "small"}
+                    aria-label="Small"
+                    onClick={() => setViewMode("small")}
+                  >
+                    <Grid3X3 size={14} />
+                    <span>Small</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={viewMode === "mini" ? "segment-active" : ""}
+                    aria-pressed={viewMode === "mini"}
+                    aria-label="Mini"
+                    onClick={() => setViewMode("mini")}
+                  >
+                    <Grid3X3 size={13} />
+                    <span>Mini</span>
+                  </button>
+                </div>
+                <p className="setting-hint">
+                  Large、Medium、Small 逐级压缩完整信息；Mini 仅显示图标和名称。
+                </p>
+              </section>
+              <section className="setting-section">
+                <label className="setting-label">入口排序</label>
+                <div className="select-wrap">
+                  <select
+                    value={sortMode}
+                    onChange={event =>
+                      setSortMode(event.target.value as SortMode)
+                    }
+                  >
+                    <option value="curated">编辑精选顺序</option>
+                    <option value="az">按名称排列</option>
+                  </select>
+                  <ChevronRight size={15} />
+                </div>
+              </section>
+              <section className="setting-section">
+                <div className="setting-row">
+                  <div>
+                    <label className="setting-label">显示描述</label>
+                    <p className="setting-hint">在网站卡片下显示一句简介。</p>
+                  </div>
+                  <button
+                    className={`toggle ${showDescriptions ? "toggle-on" : ""}`}
+                    onClick={() => setShowDescriptions(!showDescriptions)}
+                    aria-label="切换网站描述"
+                  >
+                    <span />
+                  </button>
+                </div>
+              </section>
+              <section className="setting-preview">
+                <div className="preview-image" />
+                <div>
+                  <p className="section-kicker">MATERIAL NOTE</p>
+                  <h3>玻璃的透明度，给内容留出呼吸。</h3>
+                  <p>分类、收藏和界面偏好会通过 D1 跨设备同步。</p>
+                </div>
+              </section>
             </div>
-            <div className="drawer-footer"><button className="secondary-button" onClick={() => { setFavorites([]); toast.success("收藏已清空"); }}>清空收藏</button><button className="primary-button" onClick={closeSettings}><Check size={15} /> 保存并返回</button></div>
+            <div className="drawer-footer">
+              <button
+                className="secondary-button"
+                onClick={() => {
+                  setFavorites([]);
+                  toast.success("收藏已清空");
+                }}
+              >
+                清空收藏
+              </button>
+              <button className="primary-button" onClick={closeSettings}>
+                <Check size={15} /> 保存并返回
+              </button>
+            </div>
           </aside>
         </div>
       )}
 
       {editingSite && editMode && isAuthenticated && (
-        <div className="modal-layer" role="dialog" aria-modal="true" aria-label={`编辑 ${editingSite.name}`}>
-          <button className="drawer-backdrop" onClick={() => setEditingSite(null)} aria-label="关闭编辑窗口" />
-          <form className="add-modal edit-site-modal glass-panel" onSubmit={submitEditedSite}>
-            <div className="drawer-header"><div><p className="section-kicker">EDIT ENTRY / 05</p><h2>编辑入口</h2><p className="ai-modal-intro">修改名称、链接和分类；关闭编辑模式后仍可正常打开网站。</p></div><button type="button" className="drawer-close" onClick={() => setEditingSite(null)} aria-label="关闭编辑窗口"><X size={18} /></button></div>
+        <div
+          className="modal-layer"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`编辑 ${editingSite.name}`}
+        >
+          <button
+            className="drawer-backdrop"
+            onClick={() => setEditingSite(null)}
+            aria-label="关闭编辑窗口"
+          />
+          <form
+            className="add-modal edit-site-modal glass-panel"
+            onSubmit={submitEditedSite}
+          >
+            <div className="drawer-header">
+              <div>
+                <p className="section-kicker">EDIT ENTRY / 05</p>
+                <h2>编辑入口</h2>
+                <p className="ai-modal-intro">
+                  修改名称、链接和分类；关闭编辑模式后仍可正常打开网站。
+                </p>
+              </div>
+              <button
+                type="button"
+                className="drawer-close"
+                onClick={() => setEditingSite(null)}
+                aria-label="关闭编辑窗口"
+              >
+                <X size={18} />
+              </button>
+            </div>
             <div className="form-fields">
-              <label>网站名称<input autoFocus value={editingSite.name} onChange={(event) => setEditingSite({ ...editingSite, name: event.target.value })} /></label>
-              <label>网站地址<input value={editingSite.url} onChange={(event) => setEditingSite({ ...editingSite, url: event.target.value })} placeholder="https://example.com" /></label>
-              <label>一句话简介<textarea value={editingSite.description} onChange={(event) => setEditingSite({ ...editingSite, description: event.target.value })} rows={3} /></label>
-              <label>分类<select value={editingSite.category} onChange={(event) => setEditingSite({ ...editingSite, category: event.target.value })}>{contentCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
-              <label>网站标签<span className="optional">用逗号分隔，最多 4 个</span><input value={editingSite.tags.join("，")} onChange={(event) => setEditingSite({ ...editingSite, tags: event.target.value.split(/[,，]/).map((tag) => tag.trim()).slice(0, 4) })} /></label>
+              <label>
+                网站名称
+                <input
+                  autoFocus
+                  value={editingSite.name}
+                  onChange={event =>
+                    setEditingSite({ ...editingSite, name: event.target.value })
+                  }
+                />
+              </label>
+              <label>
+                网站地址
+                <input
+                  value={editingSite.url}
+                  onChange={event =>
+                    setEditingSite({ ...editingSite, url: event.target.value })
+                  }
+                  placeholder="https://example.com"
+                />
+              </label>
+              <label>
+                一句话简介
+                <textarea
+                  value={editingSite.description}
+                  onChange={event =>
+                    setEditingSite({
+                      ...editingSite,
+                      description: event.target.value,
+                    })
+                  }
+                  rows={3}
+                />
+              </label>
+              <label>
+                分类
+                <select
+                  value={editingSite.category}
+                  onChange={event =>
+                    setEditingSite({
+                      ...editingSite,
+                      category: event.target.value,
+                    })
+                  }
+                >
+                  {contentCategories.map(category => (
+                    <option key={category.id} value={category.id}>
+                      {category.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                网站标签<span className="optional">用逗号分隔，最多 4 个</span>
+                <input
+                  value={editingSite.tags.join("，")}
+                  onChange={event =>
+                    setEditingSite({
+                      ...editingSite,
+                      tags: event.target.value
+                        .split(/[,，]/)
+                        .map(tag => tag.trim())
+                        .slice(0, 4),
+                    })
+                  }
+                />
+              </label>
               <div className="icon-field">
-                <label>网站图标<span className="optional">默认抓取 favicon</span><input value={editingSite.iconUrl || ""} onChange={(event) => setEditingSite({ ...editingSite, iconUrl: event.target.value })} placeholder={faviconUrl(editingSite.url)} /></label>
-                <label className="icon-upload-button"><input type="file" accept="image/*" onChange={(event) => uploadEditedSiteIcon(event.target.files?.[0])} /><span>上传图片</span></label>
-                <span className="icon-preview">{editingSite.iconUrl ? <img src={editingSite.iconUrl} alt="图标预览" /> : <span>{editingSite.name.slice(0, 2) || "图"}</span>}</span>
+                <label>
+                  网站图标<span className="optional">默认抓取 favicon</span>
+                  <input
+                    value={editingSite.iconUrl || ""}
+                    onChange={event =>
+                      setEditingSite({
+                        ...editingSite,
+                        iconUrl: event.target.value,
+                      })
+                    }
+                    placeholder={faviconUrl(editingSite.url)}
+                  />
+                </label>
+                <label className="icon-upload-button">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={event =>
+                      uploadEditedSiteIcon(event.target.files?.[0])
+                    }
+                  />
+                  <span>上传图片</span>
+                </label>
+                <span
+                  className="icon-preview"
+                  style={
+                    {
+                      "--site-icon-scale": `${editingSite.iconScale ?? 100}%`,
+                      background: editingSite.iconBackground || "#ffffff",
+                    } as CSSProperties
+                  }
+                >
+                  {editingSite.iconUrl ? (
+                    <img
+                      className={
+                        (editingSite.iconScale ?? 100) === 100
+                          ? "site-icon-image-fill"
+                          : ""
+                      }
+                      src={editingSite.iconUrl}
+                      alt="图标预览"
+                    />
+                  ) : (
+                    <span>{editingSite.name.slice(0, 2) || "图"}</span>
+                  )}
+                </span>
+              </div>
+              <IconCustomization
+                scale={editingSite.iconScale ?? 100}
+                background={editingSite.iconBackground || "#ffffff"}
+                onScaleChange={iconScale =>
+                  setEditingSite({ ...editingSite, iconScale })
+                }
+                onBackgroundChange={iconBackground =>
+                  setEditingSite({ ...editingSite, iconBackground })
+                }
+              />
+            </div>
+            <div className="modal-footer">
+              <span>
+                <Pencil size={14} /> 仅在编辑模式中可修改
+              </span>
+              <div className="modal-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => setEditingSite(null)}
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={savingSite}
+                >
+                  <Check size={15} /> {savingSite ? "正在保存…" : "保存修改"}
+                </button>
               </div>
             </div>
-            <div className="modal-footer"><span><Pencil size={14} /> 仅在编辑模式中可修改</span><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setEditingSite(null)}>取消</button><button type="submit" className="primary-button" disabled={savingSite}><Check size={15} /> {savingSite ? "正在保存…" : "保存修改"}</button></div></div>
           </form>
         </div>
       )}
 
       {addOpen && isAuthenticated && (
-        <div className="modal-layer" role="dialog" aria-modal="true" aria-label="添加网站">
-          <button className="drawer-backdrop" onClick={() => { setAddOpen(false); setAnalysisSource(null); }} aria-label="关闭添加窗口" />
+        <div
+          className="modal-layer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="添加网站"
+        >
+          <button
+            className="drawer-backdrop"
+            onClick={() => {
+              setAddOpen(false);
+              setAnalysisSource(null);
+            }}
+            aria-label="关闭添加窗口"
+          />
           <form className="add-modal glass-panel" onSubmit={submitNewSite}>
-            <div className="drawer-header"><div><p className="section-kicker">AI ENTRY / 03</p><h2>{analysisSource ? "确认网站信息" : "AI 添加入口"}</h2><p className="ai-modal-intro">填写网址，让 AI 自动生成简介、分类和标签。</p></div><button type="button" className="drawer-close" onClick={() => { setAddOpen(false); setAnalysisSource(null); }} aria-label="关闭添加窗口"><X size={18} /></button></div>
+            <div className="drawer-header">
+              <div>
+                <p className="section-kicker">AI ENTRY / 03</p>
+                <h2>{analysisSource ? "确认网站信息" : "AI 添加入口"}</h2>
+                <p className="ai-modal-intro">
+                  填写网址，让 AI 自动生成简介、分类和标签。
+                </p>
+              </div>
+              <button
+                type="button"
+                className="drawer-close"
+                onClick={() => {
+                  setAddOpen(false);
+                  setAnalysisSource(null);
+                }}
+                aria-label="关闭添加窗口"
+              >
+                <X size={18} />
+              </button>
+            </div>
             <div className="form-fields">
-              <label>网站地址<input autoFocus value={newSite.url} onChange={(event) => { setNewSite({ ...newSite, url: event.target.value, iconUrl: "" }); setAnalysisSource(null); }} placeholder="https://example.com" /></label>
-              <label>网站名称<span className="optional">可选，AI 可识别</span><input value={newSite.name} onChange={(event) => setNewSite({ ...newSite, name: event.target.value })} placeholder="例如：Arc" /></label>
+              <label>
+                网站地址
+                <input
+                  autoFocus
+                  value={newSite.url}
+                  onChange={event => {
+                    setNewSite({
+                      ...newSite,
+                      url: event.target.value,
+                      iconUrl: "",
+                    });
+                    setAnalysisSource(null);
+                  }}
+                  placeholder="https://example.com"
+                />
+              </label>
+              <label>
+                网站名称<span className="optional">可选，AI 可识别</span>
+                <input
+                  value={newSite.name}
+                  onChange={event =>
+                    setNewSite({ ...newSite, name: event.target.value })
+                  }
+                  placeholder="例如：Arc"
+                />
+              </label>
               {!analysisSource ? (
                 <div className="ai-analyze-card">
-                  <span className="ai-analyze-icon"><Sparkles size={18} /></span>
-                  <div><strong>AI 自动整理</strong><p>分析网站用途，生成一句话简介、推荐分类和 2–4 个标签。</p></div>
-                  <button type="button" className="ai-analyze-button" onClick={analyzeNewSite} disabled={analyzingSite}>{analyzingSite ? "分析中…" : "开始分析"}</button>
+                  <span className="ai-analyze-icon">
+                    <Sparkles size={18} />
+                  </span>
+                  <div>
+                    <strong>AI 自动整理</strong>
+                    <p>分析网站用途，生成一句话简介、推荐分类和 2–4 个标签。</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="ai-analyze-button"
+                    onClick={analyzeNewSite}
+                    disabled={analyzingSite}
+                  >
+                    {analyzingSite ? "分析中…" : "开始分析"}
+                  </button>
                 </div>
               ) : (
                 <div className="ai-review-panel">
-                  <div className="ai-review-status"><span><Check size={14} /> {analysisSource === "ai" ? "AI 分析完成" : "本地智能分析完成"}</span><button type="button" onClick={analyzeNewSite}>重新分析</button></div>
-                  <label>一句话简介<textarea value={newSite.description} onChange={(event) => setNewSite({ ...newSite, description: event.target.value })} rows={3} /></label>
-                  <label>推荐分类<select value={newSite.category} onChange={(event) => setNewSite({ ...newSite, category: event.target.value })}>{contentCategories.map((category) => <option key={category.id} value={category.id}>{category.label}</option>)}</select></label>
-                  <label>网站标签<span className="optional">用逗号分隔，可修改</span><input value={newSite.tags.join("，")} onChange={(event) => setNewSite({ ...newSite, tags: event.target.value.split(/[,，]/).map((tag) => tag.trim()).filter(Boolean).slice(0, 4) })} placeholder="效率，协作" /></label>
-                  <div className="icon-field">
-                    <label>网站图标<span className="optional">默认抓取 favicon</span><input value={newSite.iconUrl} onChange={(event) => setNewSite({ ...newSite, iconUrl: event.target.value })} placeholder={faviconUrl(newSite.url) || "https://example.com/favicon.ico"} /></label>
-                    <label className="icon-upload-button"><input type="file" accept="image/*" onChange={(event) => uploadSiteIcon(event.target.files?.[0])} /><span>上传图片</span></label>
-                    <span className="icon-preview">{newSite.iconUrl ? <img src={newSite.iconUrl} alt="图标预览" /> : <span>{newSite.name.slice(0, 2) || "图"}</span>}</span>
+                  <div className="ai-review-status">
+                    <span>
+                      <Check size={14} />{" "}
+                      {analysisSource === "ai"
+                        ? "AI 分析完成"
+                        : "本地智能分析完成"}
+                    </span>
+                    <button type="button" onClick={analyzeNewSite}>
+                      重新分析
+                    </button>
                   </div>
+                  <label>
+                    一句话简介
+                    <textarea
+                      value={newSite.description}
+                      onChange={event =>
+                        setNewSite({
+                          ...newSite,
+                          description: event.target.value,
+                        })
+                      }
+                      rows={3}
+                    />
+                  </label>
+                  <label>
+                    推荐分类
+                    <select
+                      value={newSite.category}
+                      onChange={event =>
+                        setNewSite({ ...newSite, category: event.target.value })
+                      }
+                    >
+                      {contentCategories.map(category => (
+                        <option key={category.id} value={category.id}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    网站标签<span className="optional">用逗号分隔，可修改</span>
+                    <input
+                      value={newSite.tags.join("，")}
+                      onChange={event =>
+                        setNewSite({
+                          ...newSite,
+                          tags: event.target.value
+                            .split(/[,，]/)
+                            .map(tag => tag.trim())
+                            .filter(Boolean)
+                            .slice(0, 4),
+                        })
+                      }
+                      placeholder="效率，协作"
+                    />
+                  </label>
+                  <div className="icon-field">
+                    <label>
+                      网站图标<span className="optional">默认抓取 favicon</span>
+                      <input
+                        value={newSite.iconUrl}
+                        onChange={event =>
+                          setNewSite({
+                            ...newSite,
+                            iconUrl: event.target.value,
+                          })
+                        }
+                        placeholder={
+                          faviconUrl(newSite.url) ||
+                          "https://example.com/favicon.ico"
+                        }
+                      />
+                    </label>
+                    <label className="icon-upload-button">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={event =>
+                          uploadSiteIcon(event.target.files?.[0])
+                        }
+                      />
+                      <span>上传图片</span>
+                    </label>
+                    <span
+                      className="icon-preview"
+                      style={
+                        {
+                          "--site-icon-scale": `${newSite.iconScale}%`,
+                          background: newSite.iconBackground,
+                        } as CSSProperties
+                      }
+                    >
+                      {newSite.iconUrl ? (
+                        <img
+                          className={
+                            newSite.iconScale === 100
+                              ? "site-icon-image-fill"
+                              : ""
+                          }
+                          src={newSite.iconUrl}
+                          alt="图标预览"
+                        />
+                      ) : (
+                        <span>{newSite.name.slice(0, 2) || "图"}</span>
+                      )}
+                    </span>
+                  </div>
+                  <IconCustomization
+                    scale={newSite.iconScale}
+                    background={newSite.iconBackground}
+                    onScaleChange={iconScale =>
+                      setNewSite({ ...newSite, iconScale })
+                    }
+                    onBackgroundChange={iconBackground =>
+                      setNewSite({ ...newSite, iconBackground })
+                    }
+                  />
                 </div>
               )}
             </div>
-            <div className="modal-footer"><span><Tags size={14} /> {analysisSource ? "请确认或修改后保存" : "分析不会自动保存"}</span>{analysisSource && <button type="submit" className="primary-button" disabled={savingSite}><Check size={15} /> {savingSite ? "正在保存…" : "确认并保存"}</button>}</div>
+            <div className="modal-footer">
+              <span>
+                <Tags size={14} />{" "}
+                {analysisSource ? "请确认或修改后保存" : "分析不会自动保存"}
+              </span>
+              {analysisSource && (
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={savingSite}
+                >
+                  <Check size={15} /> {savingSite ? "正在保存…" : "确认并保存"}
+                </button>
+              )}
+            </div>
           </form>
         </div>
       )}
