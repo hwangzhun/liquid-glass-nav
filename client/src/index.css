@@ -4883,8 +4883,34 @@ select:focus-visible {
 .grid-large .site-card-bottom,
 .grid-medium .site-card-bottom,
 .grid-small .site-card-bottom {
+  align-items: center;
+  flex-direction: row;
   margin-top: auto;
   padding-top: 9px;
+}
+.grid-large .site-card-bottom .tag-list,
+.grid-medium .site-card-bottom .tag-list,
+.grid-small .site-card-bottom .tag-list {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+.grid-large .site-card-bottom .tag-list span,
+.grid-medium .site-card-bottom .tag-list span,
+.grid-small .site-card-bottom .tag-list span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.grid-large .site-card-bottom .category-label,
+.grid-medium .site-card-bottom .category-label,
+.grid-small .site-card-bottom .category-label {
+  flex: 0 0 auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .grid-small .site-card-heading h3 {
   overflow: hidden;
@@ -4893,25 +4919,15 @@ select:focus-visible {
   white-space: nowrap;
 }
 .grid-small .site-card-bottom {
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   padding-top: 5px;
-}
-.grid-small .tag-list {
-  max-height: 23px;
-  overflow: hidden;
 }
 .grid-small .tag-list span {
   padding: 2px 5px;
   font-size: var(--type-micro);
 }
 .grid-small .category-label {
-  overflow: hidden;
-  width: 100%;
   font-size: var(--type-micro);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .grid-mini .site-card,
 .grid-mini .site-card-featured,
