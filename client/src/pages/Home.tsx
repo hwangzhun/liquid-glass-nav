@@ -25,6 +25,7 @@ import {
   Plus,
   Search,
   Settings2,
+  Shuffle,
   SlidersHorizontal,
   Sparkles,
   Sun,
@@ -173,6 +174,21 @@ const defaultCategoryMeta: Category[] = [
     system: true,
   },
 ];
+
+const iconBackgroundPresets = [
+  { name: "冰蓝", value: "#dceeff" },
+  { name: "潮汐蓝", value: "#b9d9ff" },
+  { name: "天青", value: "#bdefff" },
+  { name: "薄荷", value: "#bcefe5" },
+  { name: "海沫", value: "#ccf4dd" },
+  { name: "鼠尾草", value: "#dce8d5" },
+  { name: "暖沙", value: "#f4e4c1" },
+  { name: "珊瑚", value: "#ffd8cc" },
+  { name: "雾粉", value: "#f7d9e4" },
+  { name: "淡紫", value: "#e5ddff" },
+  { name: "云灰", value: "#dfe6ee" },
+  { name: "霜白", value: "#f7f9fc" },
+] as const;
 
 const categoryLabelMap: Record<string, string> = {
   design: "设计工作室",
@@ -527,10 +543,11 @@ function SiteIcon({ site }: { site: Site }) {
   return (
     <span
       className={`site-icon site-icon-${site.iconTone}`}
+      data-custom-background={site.iconBackground ? "true" : undefined}
       style={
         {
           "--site-icon-scale": `${iconScale}%`,
-          background: site.iconBackground || undefined,
+          "--site-icon-background": site.iconBackground || undefined,
         } as CSSProperties
       }
     >
@@ -559,6 +576,16 @@ function IconCustomization({
   onScaleChange: (value: number) => void;
   onBackgroundChange: (value: string) => void;
 }) {
+  const randomizeBackground = () => {
+    const candidates = iconBackgroundPresets.filter(
+      preset => preset.value.toLowerCase() !== background.toLowerCase()
+    );
+    const next =
+      candidates[Math.floor(Math.random() * candidates.length)] ||
+      iconBackgroundPresets[0];
+    onBackgroundChange(next.value);
+  };
+
   return (
     <div className="icon-customization">
       <label className="icon-scale-control">
@@ -575,7 +602,7 @@ function IconCustomization({
         />
       </label>
       <label className="icon-background-control">
-        <span>Icon 底色</span>
+        <span>自定义底色</span>
         <span className="icon-color-picker">
           <input
             type="color"
@@ -586,6 +613,33 @@ function IconCustomization({
           <i style={{ background }} />
         </span>
       </label>
+      <div className="icon-preset-control">
+        <div className="icon-preset-header">
+          <span>Icon 底色 · 12 色预设</span>
+          <button type="button" onClick={randomizeBackground}>
+            <Shuffle size={13} />
+            随机换色
+          </button>
+        </div>
+        <div className="icon-preset-swatches">
+          {iconBackgroundPresets.map(preset => {
+            const active =
+              preset.value.toLowerCase() === background.toLowerCase();
+            return (
+              <button
+                key={preset.value}
+                type="button"
+                className={active ? "icon-preset-active" : ""}
+                style={{ "--preset-color": preset.value } as CSSProperties}
+                onClick={() => onBackgroundChange(preset.value)}
+                aria-label={`使用${preset.name}底色`}
+                aria-pressed={active}
+                title={preset.name}
+              />
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -606,6 +660,7 @@ export default function Home({
   const bookmarkImportRef = useRef<HTMLInputElement>(null);
   const categoryNavRef = useRef<HTMLElement>(null);
   const draggingSiteIdRef = useRef<string | null>(null);
+  const siteDragMovedRef = useRef(false);
   const lastDragTargetRef = useRef<string | null>(null);
   const siteLayoutPositionsRef = useRef<Map<string, DOMRect>>(new Map());
   const siteLayoutAnimationsRef = useRef<Map<string, Animation>>(new Map());
@@ -1148,6 +1203,27 @@ export default function Home({
     return () =>
       desktopQuery.removeEventListener("change", closeMobileNavOnDesktop);
   }, []);
+
+  useEffect(() => {
+    const documentRoot = document.documentElement;
+    const themeColorMeta = document.querySelector<HTMLMetaElement>(
+      'meta[name="theme-color"]'
+    );
+    const statusBarMeta = document.querySelector<HTMLMetaElement>(
+      'meta[name="apple-mobile-web-app-status-bar-style"]'
+    );
+
+    documentRoot.dataset.appSkin = skin;
+    documentRoot.style.colorScheme = skin;
+    themeColorMeta?.setAttribute(
+      "content",
+      skin === "dark" ? "#050506" : "#eef5ff"
+    );
+    statusBarMeta?.setAttribute(
+      "content",
+      skin === "dark" ? "black-translucent" : "default"
+    );
+  }, [skin]);
   const categoryMeta = useMemo(() => {
     const allCategory = categories.find(category => category.id === "all");
 
@@ -1603,6 +1679,7 @@ export default function Home({
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     draggingSiteIdRef.current = siteId;
+    siteDragMovedRef.current = false;
     lastDragTargetRef.current = null;
     setDraggingSiteId(siteId);
   };
@@ -1620,11 +1697,13 @@ export default function Home({
     }
     if (lastDragTargetRef.current === targetId) return;
     lastDragTargetRef.current = targetId;
+    siteDragMovedRef.current = true;
     moveSite(sourceId, targetId);
   };
 
   const endSiteDrag = () => {
     draggingSiteIdRef.current = null;
+    siteDragMovedRef.current = false;
     lastDragTargetRef.current = null;
     setDraggingSiteId(null);
   };
@@ -1644,7 +1723,7 @@ export default function Home({
     setSortMode("curated");
     setSettingsOpen(false);
     setEditMode(true);
-    toast.message("编辑模式已开启：拖动入口可调整顺序。");
+    toast.message("编辑模式已开启：轻点入口编辑，拖动可调整顺序。");
   };
 
   const finishEditMode = async () => {
@@ -1674,6 +1753,15 @@ export default function Home({
   const openSiteEditor = (site: Site) => {
     if (!editMode) return;
     setEditingSite({ ...site, tags: [...site.tags] });
+  };
+
+  const finishSiteDrag = (site: Site) => {
+    const shouldOpenEditor =
+      editMode &&
+      draggingSiteIdRef.current === site.id &&
+      !siteDragMovedRef.current;
+    endSiteDrag();
+    if (shouldOpenEditor) openSiteEditor(site);
   };
 
   const selectCategory = (id: CategoryId) => {
@@ -1958,6 +2046,59 @@ export default function Home({
         result.source === "local"
           ? "本地智能分析完成，请确认结果。"
           : "AI 分析完成，请确认结果。"
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "网站分析失败。");
+    } finally {
+      setAnalyzingSite(false);
+    }
+  };
+
+  const analyzeEditedSite = async () => {
+    if (!editingSite?.url.trim()) {
+      toast.error("请先填写网站地址。");
+      return;
+    }
+    setAnalyzingSite(true);
+    try {
+      const response = await fetch("/api/analyze-site", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editingSite.name,
+          url: editingSite.url,
+        }),
+      });
+      const result = (await response.json()) as {
+        name?: string;
+        description?: string;
+        category?: Site["category"];
+        tags?: string[];
+        source?: AnalysisSource;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(result.error || "网站分析失败。");
+      setEditingSite(current => {
+        if (!current) return current;
+        return {
+          ...current,
+          name: result.name || current.name,
+          description: result.description || current.description,
+          category:
+            result.category &&
+            contentCategories.some(category => category.id === result.category)
+              ? result.category
+              : current.category,
+          tags: Array.isArray(result.tags)
+            ? result.tags.slice(0, 4)
+            : current.tags,
+          iconUrl: current.iconUrl || faviconUrl(current.url),
+        };
+      });
+      toast.success(
+        result.source === "local"
+          ? "本地智能识别完成，请确认修改。"
+          : "AI 识别完成，请确认修改。"
       );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "网站分析失败。");
@@ -2394,7 +2535,7 @@ export default function Home({
               >
                 <span className="edit-mode-pulse" />
                 <strong>编辑模式</strong>
-                <span>按住并拖动整张卡片调整顺序，也可修改或删除入口。</span>
+                <span>轻点卡片编辑信息；拖动调整顺序，右上角 × 可删除。</span>
                 <button onClick={finishEditMode} disabled={editHintExiting}>
                   <Check size={14} /> 完成
                 </button>
@@ -2436,10 +2577,14 @@ export default function Home({
                   }
                   onPointerDown={event => beginSiteDrag(event, site.id)}
                   onPointerMove={continueSiteDrag}
-                  onPointerUp={endSiteDrag}
+                  onPointerUp={() => finishSiteDrag(site)}
                   onPointerCancel={endSiteDrag}
                   onKeyDown={event => {
                     if (!editMode) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      openSiteEditor(site);
+                    }
                     if (["ArrowLeft", "ArrowUp"].includes(event.key)) {
                       event.preventDefault();
                       moveSiteByOffset(site.id, -1);
@@ -2467,21 +2612,14 @@ export default function Home({
                       (editMode ? (
                         <div className="site-edit-controls">
                           <button
-                            className="site-edit-button"
-                            onClick={() => openSiteEditor(site)}
-                            aria-label={`编辑 ${site.name}`}
-                            title="编辑入口"
-                          >
-                            <Pencil size={14} />
-                          </button>
-                          <button
+                            type="button"
                             className="site-delete-button"
                             onClick={() => void deleteSite(site)}
                             disabled={savingSite}
                             aria-label={`删除 ${site.name}`}
                             title="删除入口"
                           >
-                            <Trash2 size={14} />
+                            <X size={13} strokeWidth={2.6} />
                           </button>
                         </div>
                       ) : (
@@ -3257,6 +3395,23 @@ export default function Home({
                   placeholder="https://example.com"
                 />
               </label>
+              <div className="ai-analyze-card edit-ai-analyze-card">
+                <span className="ai-analyze-icon">
+                  <Sparkles size={18} />
+                </span>
+                <div>
+                  <strong>AI 识别网站信息</strong>
+                  <p>根据当前网址更新名称、简介、分类和标签。</p>
+                </div>
+                <button
+                  type="button"
+                  className="ai-analyze-button"
+                  onClick={analyzeEditedSite}
+                  disabled={analyzingSite}
+                >
+                  {analyzingSite ? "识别中…" : "AI 识别"}
+                </button>
+              </div>
               <label>
                 一句话简介
                 <textarea
@@ -3328,11 +3483,13 @@ export default function Home({
                   <span>上传图片</span>
                 </label>
                 <span
-                  className="icon-preview"
+                  className={`site-icon site-icon-${editingSite.iconTone} icon-preview`}
+                  data-custom-background="true"
                   style={
                     {
                       "--site-icon-scale": `${editingSite.iconScale ?? 100}%`,
-                      background: editingSite.iconBackground || "#ffffff",
+                      "--site-icon-background":
+                        editingSite.iconBackground || "#ffffff",
                     } as CSSProperties
                   }
                 >
