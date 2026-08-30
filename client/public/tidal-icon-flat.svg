@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">tidal/index</title>
+  <desc id="desc">A flat four-tile navigation grid with a tidal wave accent.</desc>
+  <defs>
+    <clipPath id="tile-clip">
+      <rect x="184" y="184" width="288" height="288" rx="72"/>
+    </clipPath>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="#EAF5FF"/>
+  <path d="M0 650C148 566 280 574 410 650C550 732 687 740 1024 560V1024H0Z" fill="#D8EEFF"/>
+  <g clip-path="url(#tile-clip)">
+    <rect x="184" y="184" width="288" height="288" fill="#0A84FF"/>
+    <path d="M184 354C252 310 320 309 385 348C414 365 442 370 472 362V472H184Z" fill="#64D2FF"/>
+  </g>
+  <rect x="552" y="184" width="288" height="288" rx="72" fill="#FFFFFF"/>
+  <rect x="184" y="552" width="288" height="288" rx="72" fill="#FFFFFF"/>
+  <rect x="552" y="552" width="288" height="288" rx="72" fill="#FFFFFF"/>
+</svg>

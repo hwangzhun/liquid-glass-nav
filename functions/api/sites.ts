@@ -15,6 +15,8 @@ type SitePayload = {
   categoryLabel: string;
   icon: string;
   iconUrl?: string;
+  iconScale?: number;
+  iconBackground?: string;
   iconTone: string;
   tags: string[];
   featured?: boolean;
@@ -31,6 +33,8 @@ type SiteRow = {
   category_label: string;
   icon: string;
   icon_url: string | null;
+  icon_scale: number;
+  icon_background: string;
   icon_tone: string;
   tags: string;
   featured: number;
@@ -69,6 +73,15 @@ function sanitizeSite(value: unknown, fallbackSortOrder = 0): SitePayload {
       typeof data.iconUrl === "string"
         ? data.iconUrl.slice(0, 400_000)
         : undefined,
+    iconScale:
+      typeof data.iconScale === "number" && Number.isFinite(data.iconScale)
+        ? Math.min(100, Math.max(30, Math.round(data.iconScale)))
+        : 100,
+    iconBackground:
+      typeof data.iconBackground === "string" &&
+      /^#[0-9a-f]{6}$/i.test(data.iconBackground)
+        ? data.iconBackground.toLowerCase()
+        : "#ffffff",
     iconTone: (data.iconTone as string).trim().slice(0, 30),
     tags: Array.isArray(data.tags)
       ? data.tags
@@ -103,6 +116,8 @@ function toSite(row: SiteRow): SitePayload {
     categoryLabel: row.category_label,
     icon: row.icon,
     iconUrl: row.icon_url || undefined,
+    iconScale: row.icon_scale,
+    iconBackground: row.icon_background,
     iconTone: row.icon_tone,
     tags,
     featured: row.featured === 1,
@@ -118,12 +133,14 @@ async function upsertSite(
 ) {
   await context.env.NAV_DB.prepare(
     `
-    INSERT INTO sites (workspace_id, id, name, url, description, category, category_label, icon, icon_url, icon_tone, tags, featured, accent, sort_order, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    INSERT INTO sites (workspace_id, id, name, url, description, category, category_label, icon, icon_url, icon_scale, icon_background, icon_tone, tags, featured, accent, sort_order, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(workspace_id, id) DO UPDATE SET
       name = excluded.name, url = excluded.url, description = excluded.description,
       category = excluded.category, category_label = excluded.category_label,
-      icon = excluded.icon, icon_url = excluded.icon_url, icon_tone = excluded.icon_tone,
+      icon = excluded.icon, icon_url = excluded.icon_url,
+      icon_scale = excluded.icon_scale, icon_background = excluded.icon_background,
+      icon_tone = excluded.icon_tone,
       tags = excluded.tags, featured = excluded.featured, accent = excluded.accent,
       sort_order = excluded.sort_order,
       updated_at = CURRENT_TIMESTAMP
@@ -139,6 +156,8 @@ async function upsertSite(
       site.categoryLabel,
       site.icon,
       site.iconUrl || null,
+      site.iconScale || 100,
+      site.iconBackground || "#ffffff",
       site.iconTone,
       JSON.stringify(site.tags),
       site.featured ? 1 : 0,
@@ -182,7 +201,7 @@ export async function onRequestGet(context: PagesContext) {
     await migrateLegacyWorkspaceIfNeeded(context);
     const result = await context.env.NAV_DB.prepare(
       `
-      SELECT id, name, url, description, category, category_label, icon, icon_url, icon_tone, tags, featured, accent, sort_order
+      SELECT id, name, url, description, category, category_label, icon, icon_url, icon_scale, icon_background, icon_tone, tags, featured, accent, sort_order
       FROM sites WHERE workspace_id = ? ORDER BY sort_order ASC, created_at ASC
     `
     )

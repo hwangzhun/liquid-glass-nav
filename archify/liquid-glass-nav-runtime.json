@@ -1,0 +1,413 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Liquid Glass Nav · 运行时架构",
+    "output": "liquid-glass-nav-runtime.html",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "browse",
+        "label": "浏览与检索",
+        "focus": [
+          "spa",
+          "static",
+          "sites",
+          "state",
+          "local"
+        ],
+        "note": "访客只读加载入口、分类、收藏与偏好，D1 不可用时回退本地缓存。"
+      },
+      {
+        "id": "manage",
+        "label": "登录与管理",
+        "focus": [
+          "auth",
+          "sites",
+          "state",
+          "d1"
+        ],
+        "note": "登录后写入入口与状态，经 D1 跨设备持久化。"
+      },
+      {
+        "id": "enrich",
+        "label": "AI 与图标",
+        "focus": [
+          "ai",
+          "ai-api",
+          "icons",
+          "target"
+        ],
+        "note": "自动生成名称简介分类，自动发现站点图标。"
+      }
+    ],
+    "repository": {
+      "url": "https://github.com/hwangzhun/liquid-glass-nav",
+      "revision": "0a597b1ec61401913a87e7de7cd2236de059b1c9"
+    }
+  },
+  "components": [
+    {
+      "id": "fonts",
+      "type": "external",
+      "label": "jsDelivr",
+      "sublabel": "SF Pro 字体 CDN",
+      "pos": [
+        60,
+        10
+      ],
+      "size": [
+        190,
+        60
+      ]
+    },
+    {
+      "id": "spa",
+      "type": "frontend",
+      "label": "Liquid Glass Nav 前端",
+      "sublabel": "React 19 · Vite 7 · Tailwind 4",
+      "tag": "搜索 · 管理 · AI 整理",
+      "pos": [
+        60,
+        170
+      ],
+      "size": [
+        200,
+        100
+      ],
+      "sources": [
+        {
+          "path": "client/src/pages/Home.tsx"
+        },
+        {
+          "path": "client/src/App.tsx"
+        }
+      ]
+    },
+    {
+      "id": "local",
+      "type": "database",
+      "label": "localStorage 缓存",
+      "sublabel": "离线降级",
+      "pos": [
+        60,
+        320
+      ],
+      "size": [
+        200,
+        80
+      ]
+    },
+    {
+      "id": "static",
+      "type": "cloud",
+      "label": "静态资源",
+      "sublabel": "dist/public",
+      "tag": "Pages 托管",
+      "pos": [
+        600,
+        30
+      ],
+      "size": [
+        180,
+        60
+      ]
+    },
+    {
+      "id": "auth",
+      "type": "security",
+      "label": "登录认证",
+      "sublabel": "/api/auth",
+      "tag": "HttpOnly Cookie · 30 天",
+      "pos": [
+        600,
+        150
+      ],
+      "size": [
+        180,
+        70
+      ],
+      "sources": [
+        {
+          "path": "functions/api/auth.ts"
+        }
+      ]
+    },
+    {
+      "id": "sites",
+      "type": "backend",
+      "label": "入口管理",
+      "sublabel": "/api/sites",
+      "tag": "D1 增删改查",
+      "pos": [
+        600,
+        290
+      ],
+      "size": [
+        180,
+        70
+      ],
+      "sources": [
+        {
+          "path": "functions/api/sites.ts"
+        }
+      ]
+    },
+    {
+      "id": "state",
+      "type": "backend",
+      "label": "状态同步",
+      "sublabel": "/api/state",
+      "tag": "分类 · 收藏 · 偏好",
+      "pos": [
+        600,
+        410
+      ],
+      "size": [
+        180,
+        70
+      ],
+      "sources": [
+        {
+          "path": "functions/api/state.ts"
+        }
+      ]
+    },
+    {
+      "id": "ai",
+      "type": "backend",
+      "label": "AI 整理",
+      "sublabel": "/api/analyze-site",
+      "tag": "AI 或本地规则",
+      "pos": [
+        600,
+        530
+      ],
+      "size": [
+        180,
+        70
+      ],
+      "sources": [
+        {
+          "path": "functions/api/analyze-site.ts"
+        }
+      ]
+    },
+    {
+      "id": "icons",
+      "type": "backend",
+      "label": "图标发现",
+      "sublabel": "/api/site-icons",
+      "tag": "防 SSRF",
+      "pos": [
+        600,
+        650
+      ],
+      "size": [
+        180,
+        70
+      ]
+    },
+    {
+      "id": "d1",
+      "type": "database",
+      "label": "Cloudflare D1",
+      "sublabel": "NAV_DB 绑定",
+      "tag": "sites · nav_state",
+      "pos": [
+        1120,
+        290
+      ],
+      "size": [
+        220,
+        90
+      ],
+      "sources": [
+        {
+          "path": "wrangler.jsonc"
+        },
+        {
+          "path": "migrations/0005_shared_workspace_state.sql"
+        }
+      ]
+    },
+    {
+      "id": "ai-api",
+      "type": "external",
+      "label": "AI 服务",
+      "sublabel": "OpenAI 兼容接口",
+      "tag": "gpt-4.1-mini",
+      "pos": [
+        1120,
+        530
+      ],
+      "size": [
+        200,
+        70
+      ]
+    },
+    {
+      "id": "target",
+      "type": "external",
+      "label": "目标网站",
+      "sublabel": "favicon · HTML · manifest",
+      "pos": [
+        1120,
+        650
+      ],
+      "size": [
+        200,
+        70
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "浏览器（客户端）",
+      "wraps": [
+        "spa",
+        "local"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Cloudflare Pages（边缘）",
+      "wraps": [
+        "static",
+        "auth",
+        "sites",
+        "state",
+        "ai",
+        "icons"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "会话保护的写入接口",
+      "wraps": [
+        "sites",
+        "state",
+        "ai",
+        "icons"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "spa-fonts",
+      "from": "spa",
+      "to": "fonts",
+      "label": "加载 SF Pro 字体",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelDy": -39
+    },
+    {
+      "id": "spa-static",
+      "from": "spa",
+      "to": "static",
+      "label": "获取 SPA 与静态资源",
+      "variant": "emphasis",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "spa-local",
+      "from": "spa",
+      "to": "local",
+      "label": "读写缓存",
+      "variant": "dashed",
+      "labelDy": 24
+    },
+    {
+      "id": "spa-auth",
+      "from": "spa",
+      "to": "auth",
+      "label": "GET · POST · DELETE /api/auth",
+      "labelSegment": 2
+    },
+    {
+      "id": "spa-sites",
+      "from": "spa",
+      "to": "sites",
+      "label": "GET · POST · DELETE /api/sites",
+      "labelSegment": 2
+    },
+    {
+      "id": "spa-state",
+      "from": "spa",
+      "to": "state",
+      "label": "GET · PUT /api/state",
+      "labelSegment": 2
+    },
+    {
+      "id": "spa-ai",
+      "from": "spa",
+      "to": "ai",
+      "label": "POST /api/analyze-site",
+      "labelSegment": 2
+    },
+    {
+      "id": "spa-icons",
+      "from": "spa",
+      "to": "icons",
+      "label": "POST /api/site-icons",
+      "labelSegment": 2
+    },
+    {
+      "id": "sites-d1",
+      "from": "sites",
+      "to": "d1",
+      "label": "SQL 读取 / 写入 / 删除"
+    },
+    {
+      "id": "state-d1",
+      "from": "state",
+      "to": "d1",
+      "label": "SQL 读取 / 写入"
+    },
+    {
+      "id": "ai-call",
+      "from": "ai",
+      "to": "ai-api",
+      "label": "Chat Completions",
+      "variant": "dashed"
+    },
+    {
+      "id": "icons-fetch",
+      "from": "icons",
+      "to": "target",
+      "label": "抓取 HTML / manifest",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "客户端与边缘",
+      "items": [
+        "Cloudflare Pages 从 dist/public 提供 SPA",
+        "localStorage 镜像站点、收藏与偏好，离线可用"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "数据与会话",
+      "items": [
+        "D1 NAV_DB 跨设备保存入口与导航状态",
+        "访客只读浏览，管理写入需要 tidal_session Cookie"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "安全与 AI",
+      "items": [
+        "HttpOnly SameSite=Lax 会话 Cookie，有效期 30 天",
+        "AI 密钥仅存服务端，未配置时使用本地规则"
+      ]
+    }
+  ]
+}

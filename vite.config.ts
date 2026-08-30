@@ -10,6 +10,8 @@ import {
   timingSafeEqual,
 } from "./shared/auth";
 import { analyzeSite } from "./shared/siteAnalysis";
+import { findSiteIcons } from "./shared/siteIcons";
+import { validatePublicIconTarget } from "./shared/nodeSiteIconSecurity";
 
 function vitePluginSiteAnalysis(): Plugin {
   return {
@@ -18,21 +20,85 @@ function vitePluginSiteAnalysis(): Plugin {
       server.middlewares.use("/api/analyze-site", (req, res, next) => {
         if (req.method !== "POST") return next();
         let body = "";
-        req.on("data", (chunk) => { body += chunk.toString(); });
+        req.on("data", chunk => {
+          body += chunk.toString();
+        });
         req.on("end", async () => {
           try {
             const password = process.env.NAV_PASSWORD?.trim() || "tidal";
-            if (!await hasValidSession(req.headers.cookie, password)) {
-              res.writeHead(401, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
+            if (!(await hasValidSession(req.headers.cookie, password))) {
+              res.writeHead(401, {
+                "Content-Type": "application/json; charset=utf-8",
+                "Cache-Control": "no-store",
+              });
               res.end(JSON.stringify({ error: "请先登录。" }));
               return;
             }
             const result = await analyzeSite(body ? JSON.parse(body) : {});
-            res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+            res.writeHead(200, {
+              "Content-Type": "application/json; charset=utf-8",
+            });
             res.end(JSON.stringify(result));
           } catch (error) {
-            res.writeHead(400, { "Content-Type": "application/json; charset=utf-8" });
-            res.end(JSON.stringify({ error: error instanceof Error ? error.message : "网站分析失败。" }));
+            res.writeHead(400, {
+              "Content-Type": "application/json; charset=utf-8",
+            });
+            res.end(
+              JSON.stringify({
+                error:
+                  error instanceof Error ? error.message : "网站分析失败。",
+              })
+            );
+          }
+        });
+      });
+    },
+  };
+}
+
+function vitePluginSiteIcons(): Plugin {
+  return {
+    name: "site-icons-api",
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use("/api/site-icons", (req, res, next) => {
+        if (req.method !== "POST") return next();
+        let body = "";
+        req.on("data", chunk => {
+          body += chunk.toString();
+        });
+        req.on("end", async () => {
+          try {
+            const password = process.env.NAV_PASSWORD?.trim() || "tidal";
+            if (!(await hasValidSession(req.headers.cookie, password))) {
+              res.writeHead(401, {
+                "Content-Type": "application/json; charset=utf-8",
+                "Cache-Control": "no-store",
+              });
+              res.end(JSON.stringify({ error: "请先登录。" }));
+              return;
+            }
+            const input = body ? (JSON.parse(body) as { url?: unknown }) : {};
+            const url = typeof input.url === "string" ? input.url.trim() : "";
+            if (!url) throw new Error("请填写网站地址。");
+            const icons = await findSiteIcons(url, target =>
+              validatePublicIconTarget(target, { allowProxyFakeIps: true })
+            );
+            res.writeHead(200, {
+              "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": "no-store",
+            });
+            res.end(JSON.stringify({ icons }));
+          } catch (error) {
+            res.writeHead(400, {
+              "Content-Type": "application/json; charset=utf-8",
+              "Cache-Control": "no-store",
+            });
+            res.end(
+              JSON.stringify({
+                error:
+                  error instanceof Error ? error.message : "网站图标识别失败。",
+              })
+            );
           }
         });
       });
@@ -46,36 +112,67 @@ function vitePluginPersonalAuth(): Plugin {
     configureServer(server: ViteDevServer) {
       server.middlewares.use("/api/auth", async (req, res, next) => {
         const password = process.env.NAV_PASSWORD?.trim() || "tidal";
-        const jsonHeaders = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
+        const jsonHeaders = {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+        };
 
         if (req.method === "GET") {
-          const authenticated = await hasValidSession(req.headers.cookie, password);
+          const authenticated = await hasValidSession(
+            req.headers.cookie,
+            password
+          );
           res.writeHead(authenticated ? 200 : 401, jsonHeaders);
-          res.end(JSON.stringify({ authenticated, configured: true, development: true }));
+          res.end(
+            JSON.stringify({
+              authenticated,
+              configured: true,
+              development: true,
+            })
+          );
           return;
         }
 
         if (req.method === "DELETE") {
-          res.writeHead(200, { ...jsonHeaders, "Set-Cookie": clearSessionCookie(false) });
+          res.writeHead(200, {
+            ...jsonHeaders,
+            "Set-Cookie": clearSessionCookie(false),
+          });
           res.end(JSON.stringify({ authenticated: false }));
           return;
         }
 
         if (req.method !== "POST") return next();
         let body = "";
-        req.on("data", (chunk) => { body += chunk.toString(); });
+        req.on("data", chunk => {
+          body += chunk.toString();
+        });
         req.on("end", async () => {
           try {
-            const input = body ? JSON.parse(body) as { password?: unknown } : {};
-            const submitted = typeof input.password === "string" ? input.password : "";
+            const input = body
+              ? (JSON.parse(body) as { password?: unknown })
+              : {};
+            const submitted =
+              typeof input.password === "string" ? input.password : "";
             if (!timingSafeEqual(submitted, password)) {
               res.writeHead(401, jsonHeaders);
-              res.end(JSON.stringify({ error: "密码不正确。", configured: true }));
+              res.end(
+                JSON.stringify({ error: "密码不正确。", configured: true })
+              );
               return;
             }
             const token = await createSessionToken(password);
-            res.writeHead(200, { ...jsonHeaders, "Set-Cookie": sessionCookie(token, false) });
-            res.end(JSON.stringify({ authenticated: true, configured: true, development: true }));
+            res.writeHead(200, {
+              ...jsonHeaders,
+              "Set-Cookie": sessionCookie(token, false),
+            });
+            res.end(
+              JSON.stringify({
+                authenticated: true,
+                configured: true,
+                development: true,
+              })
+            );
           } catch {
             res.writeHead(400, jsonHeaders);
             res.end(JSON.stringify({ error: "登录请求格式不正确。" }));
@@ -86,7 +183,13 @@ function vitePluginPersonalAuth(): Plugin {
   };
 }
 
-const plugins = [react(), tailwindcss(), vitePluginPersonalAuth(), vitePluginSiteAnalysis()];
+const plugins = [
+  react(),
+  tailwindcss(),
+  vitePluginPersonalAuth(),
+  vitePluginSiteAnalysis(),
+  vitePluginSiteIcons(),
+];
 
 export default defineConfig({
   plugins,

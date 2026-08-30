@@ -3,6 +3,7 @@ import {
   Bookmark,
   BriefcaseBusiness,
   Check,
+  ChevronLeft,
   ChevronRight,
   CircleHelp,
   Compass,
@@ -23,6 +24,7 @@ import {
   Palette,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Settings2,
   Shuffle,
@@ -54,6 +56,12 @@ type SortMode = "curated" | "az";
 type ViewMode = "large" | "medium" | "small" | "mini";
 type BackgroundMode = "mist" | "blue" | "midnight" | "custom";
 type AnalysisSource = "ai" | "local";
+
+type SiteIconCandidate = {
+  url: string;
+  kind: "favicon" | "apple-touch" | "manifest";
+  label: string;
+};
 
 type CloudPreferences = {
   skin?: "dark" | "light";
@@ -555,6 +563,8 @@ function SiteIcon({ site }: { site: Site }) {
         <img
           src={source}
           alt=""
+          loading="lazy"
+          decoding="async"
           className={iconScale === 100 ? "site-icon-image-fill" : ""}
           onError={() => setIconFailed(true)}
         />
@@ -644,6 +654,340 @@ function IconCustomization({
   );
 }
 
+function iconCanLoad(url: string) {
+  return new Promise<boolean>(resolve => {
+    const image = new Image();
+    const timeout = window.setTimeout(() => {
+      image.src = "";
+      resolve(false);
+    }, 4_000);
+    const finish = (loaded: boolean) => {
+      window.clearTimeout(timeout);
+      image.onload = null;
+      image.onerror = null;
+      resolve(loaded);
+    };
+    image.referrerPolicy = "no-referrer";
+    image.onload = () => finish(true);
+    image.onerror = () => finish(false);
+    image.src = url;
+  });
+}
+
+function SiteIconSettings({
+  name,
+  url,
+  iconUrl,
+  scale,
+  background,
+  autoDiscover = false,
+  onChange,
+}: {
+  name: string;
+  url: string;
+  iconUrl: string;
+  scale: number;
+  background: string;
+  autoDiscover?: boolean;
+  onChange: (value: {
+    iconUrl?: string;
+    iconScale?: number;
+    iconBackground?: string;
+  }) => void;
+}) {
+  const requestIdRef = useRef(0);
+  const iconUrlRef = useRef(iconUrl);
+  const [activeTab, setActiveTab] = useState<"auto" | "upload">(
+    iconUrl.startsWith("data:") ? "upload" : "auto"
+  );
+  const [candidates, setCandidates] = useState<SiteIconCandidate[]>([]);
+  const [failedCandidates, setFailedCandidates] = useState<Set<string>>(
+    new Set()
+  );
+  const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [fetchError, setFetchError] = useState("");
+  const [previewFailed, setPreviewFailed] = useState(false);
+
+  iconUrlRef.current = iconUrl;
+
+  const loadCandidates = async (selectFirst = false) => {
+    if (!url.trim()) {
+      setFetchError("请先填写网站地址。");
+      return;
+    }
+    const requestId = ++requestIdRef.current;
+    setLoadingCandidates(true);
+    setFetchError("");
+    setFailedCandidates(new Set());
+    try {
+      const response = await fetch("/api/site-icons", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const payload = (await response.json()) as {
+        icons?: SiteIconCandidate[];
+        error?: string;
+      };
+      if (!response.ok) throw new Error(payload.error || "网站图标识别失败。");
+      if (requestId !== requestIdRef.current) return;
+      const icons = Array.isArray(payload.icons)
+        ? payload.icons.slice(0, 8)
+        : [];
+      setCandidates(icons);
+      if (selectFirst && !iconUrlRef.current && icons[0]) {
+        const results = await Promise.all(
+          icons.map(candidate => iconCanLoad(candidate.url))
+        );
+        if (requestId !== requestIdRef.current) return;
+        setFailedCandidates(
+          new Set(
+            icons
+              .filter((_, index) => !results[index])
+              .map(candidate => candidate.url)
+          )
+        );
+        const firstAvailable = icons.find((_, index) => results[index]);
+        if (!iconUrlRef.current && firstAvailable) {
+          iconUrlRef.current = firstAvailable.url;
+          onChange({ iconUrl: firstAvailable.url });
+        }
+      }
+    } catch (error) {
+      if (requestId !== requestIdRef.current) return;
+      setCandidates([]);
+      setFetchError(
+        error instanceof Error ? error.message : "网站图标识别失败。"
+      );
+    } finally {
+      if (requestId === requestIdRef.current) setLoadingCandidates(false);
+    }
+  };
+
+  useEffect(() => {
+    requestIdRef.current += 1;
+    setCandidates([]);
+    setFailedCandidates(new Set());
+    setFetchError("");
+  }, [url]);
+
+  useEffect(() => {
+    setPreviewFailed(false);
+    if (iconUrl.startsWith("data:")) setActiveTab("upload");
+  }, [iconUrl]);
+
+  useEffect(() => {
+    if (url.trim()) void loadCandidates(autoDiscover && !iconUrlRef.current);
+    // The settings page intentionally discovers once whenever it is opened.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoDiscover, url]);
+
+  const uploadIcon = (file?: File) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("请选择图片文件。");
+      return;
+    }
+    if (file.size > 256 * 1024) {
+      toast.error("图标图片不能超过 256KB。");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+      requestIdRef.current += 1;
+      iconUrlRef.current = reader.result;
+      onChange({ iconUrl: reader.result });
+      toast.success("本地图标已加入当前表单。");
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const visibleCandidates = candidates.filter(
+    candidate => !failedCandidates.has(candidate.url)
+  );
+  const displayIcon = iconUrl && !previewFailed ? iconUrl : "";
+  const previewLabel = name.trim().slice(0, 2) || "图";
+
+  return (
+    <div className="site-icon-settings-page">
+      <div className="site-icon-settings-current">
+        <span
+          className="site-icon-settings-preview"
+          style={
+            {
+              "--site-icon-scale": `${scale}%`,
+              "--site-icon-background": background,
+            } as CSSProperties
+          }
+        >
+          {displayIcon ? (
+            <img
+              src={displayIcon}
+              alt="图标预览"
+              onError={() => setPreviewFailed(true)}
+            />
+          ) : (
+            <span>{previewLabel}</span>
+          )}
+        </span>
+        <div>
+          <strong>{name.trim() || "未命名网站"}</strong>
+          <p>当前图标预览</p>
+        </div>
+      </div>
+      <div className="site-icon-settings-tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "auto"}
+          className={activeTab === "auto" ? "active" : ""}
+          onClick={() => setActiveTab("auto")}
+        >
+          自动图标
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "upload"}
+          className={activeTab === "upload" ? "active" : ""}
+          onClick={() => setActiveTab("upload")}
+        >
+          本地上传
+        </button>
+      </div>
+
+      <div className="site-icon-settings-content">
+        {activeTab === "auto" ? (
+          <div className="site-icon-auto-panel">
+            <div className="site-icon-panel-heading">
+              <div>
+                <strong>网站发现的图标</strong>
+                <p>选择一个候选图标，预览会立即更新。</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadCandidates(false)}
+                disabled={loadingCandidates}
+              >
+                <RefreshCw
+                  size={14}
+                  className={loadingCandidates ? "is-spinning" : ""}
+                />
+                重试
+              </button>
+            </div>
+            {loadingCandidates ? (
+              <div className="site-icon-candidate-loading">
+                <RefreshCw size={18} className="is-spinning" />
+                正在查找图标…
+              </div>
+            ) : visibleCandidates.length ? (
+              <div className="site-icon-candidate-grid">
+                {visibleCandidates.map(candidate => (
+                  <button
+                    key={candidate.url}
+                    type="button"
+                    className={iconUrl === candidate.url ? "selected" : ""}
+                    onClick={() => {
+                      iconUrlRef.current = candidate.url;
+                      onChange({ iconUrl: candidate.url });
+                    }}
+                    aria-pressed={iconUrl === candidate.url}
+                    title={candidate.label}
+                  >
+                    <img
+                      src={candidate.url}
+                      alt=""
+                      onError={() =>
+                        setFailedCandidates(current =>
+                          new Set(current).add(candidate.url)
+                        )
+                      }
+                    />
+                    <span>{candidate.label}</span>
+                    {iconUrl === candidate.url && <Check size={13} />}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="site-icon-empty-state">
+                <span>{previewLabel}</span>
+                <div>
+                  <strong>暂时没有可用候选</strong>
+                  <p>{fetchError || "可以重试，或改用本地上传。"}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <label className="site-icon-upload-panel">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={event => uploadIcon(event.target.files?.[0])}
+            />
+            <span className="site-icon-upload-mark">
+              <Upload size={20} />
+            </span>
+            <strong>选择本地图标</strong>
+            <p>支持常见图片格式，文件不超过 256KB。</p>
+          </label>
+        )}
+
+        <div className="site-icon-appearance-section">
+          <div className="site-icon-panel-heading">
+            <div>
+              <strong>图标外观</strong>
+              <p>调整图片留白和玻璃卡片底色。</p>
+            </div>
+          </div>
+          <IconCustomization
+            scale={scale}
+            background={background}
+            onScaleChange={iconScale => onChange({ iconScale })}
+            onBackgroundChange={iconBackground => onChange({ iconBackground })}
+          />
+        </div>
+
+        <details className="site-icon-advanced">
+          <summary>高级 · 自定义图标 URL</summary>
+          <label>
+            图标地址
+            <input
+              value={iconUrl.startsWith("data:") ? "" : iconUrl}
+              onChange={event => {
+                iconUrlRef.current = event.target.value;
+                onChange({ iconUrl: event.target.value });
+              }}
+              placeholder={faviconUrl(url) || "https://example.com/icon.png"}
+            />
+          </label>
+        </details>
+      </div>
+    </div>
+  );
+}
+
+function OpenSiteIconSettingsButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="site-icon-settings-navigation"
+      onClick={onClick}
+    >
+      <span className="site-icon-settings-navigation-mark">
+        <Settings2 size={18} />
+      </span>
+      <span>
+        <strong>设置网站图标</strong>
+        <small>自动获取、上传图片和调整图标外观</small>
+      </span>
+      <ChevronRight size={17} />
+    </button>
+  );
+}
+
 export default function Home({
   isAuthenticated,
   onLogin,
@@ -698,9 +1042,11 @@ export default function Home({
     height: number;
   } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [newIconSettingsOpen, setNewIconSettingsOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editHintExiting, setEditHintExiting] = useState(false);
   const [editingSite, setEditingSite] = useState<Site | null>(null);
+  const [editIconSettingsOpen, setEditIconSettingsOpen] = useState(false);
   const [draggingSiteId, setDraggingSiteId] = useState<string | null>(null);
   const [orderDirty, setOrderDirty] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -1095,6 +1441,14 @@ export default function Home({
     setEditingSite(null);
   }, [isAuthenticated]);
 
+  useEffect(() => {
+    if (!addOpen) setNewIconSettingsOpen(false);
+  }, [addOpen]);
+
+  useEffect(() => {
+    if (!editingSite) setEditIconSettingsOpen(false);
+  }, [editingSite]);
+
   const openSettings = () => {
     if (!isAuthenticated) {
       onLogin();
@@ -1165,6 +1519,16 @@ export default function Home({
         searchRef.current?.focus();
       }
       if (event.key === "Escape") {
+        if (editIconSettingsOpen) {
+          event.preventDefault();
+          setEditIconSettingsOpen(false);
+          return;
+        }
+        if (newIconSettingsOpen) {
+          event.preventDefault();
+          setNewIconSettingsOpen(false);
+          return;
+        }
         if (settingsOpen) closeSettings();
         setAddOpen(false);
         setEditingSite(null);
@@ -1173,7 +1537,7 @@ export default function Home({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [settingsOpen]);
+  }, [editIconSettingsOpen, newIconSettingsOpen, settingsOpen]);
 
   useEffect(() => {
     const overlayOpen =
@@ -2039,7 +2403,7 @@ export default function Home({
             ? result.category
             : defaultContentCategoryId,
         tags: Array.isArray(result.tags) ? result.tags : [],
-        iconUrl: current.iconUrl || faviconUrl(current.url),
+        iconUrl: current.iconUrl,
       }));
       setAnalysisSource(result.source || "ai");
       toast.success(
@@ -2138,48 +2502,6 @@ export default function Home({
     window.localStorage.removeItem("tidal-background-image");
     setBackgroundImage("");
     toast.success("背景图片已清除。");
-  };
-
-  const uploadSiteIcon = (file?: File) => {
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("请选择图片文件。");
-      return;
-    }
-    if (file.size > 256 * 1024) {
-      toast.error("图标图片不能超过 256KB。");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () =>
-      setNewSite(current => ({
-        ...current,
-        iconUrl: typeof reader.result === "string" ? reader.result : "",
-      }));
-    reader.readAsDataURL(file);
-  };
-
-  const uploadEditedSiteIcon = (file?: File) => {
-    if (!file || !editingSite) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("请选择图片文件。");
-      return;
-    }
-    if (file.size > 256 * 1024) {
-      toast.error("图标图片不能超过 256KB。");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () =>
-      setEditingSite(current =>
-        current
-          ? {
-              ...current,
-              iconUrl: typeof reader.result === "string" ? reader.result : "",
-            }
-          : current
-      );
-    reader.readAsDataURL(file);
   };
 
   const submitEditedSite = async (event: FormEvent<HTMLFormElement>) => {
@@ -3355,14 +3677,34 @@ export default function Home({
           />
           <form
             className="add-modal edit-site-modal glass-panel"
-            onSubmit={submitEditedSite}
+            onSubmit={event => {
+              if (editIconSettingsOpen) {
+                event.preventDefault();
+                setEditIconSettingsOpen(false);
+                return;
+              }
+              void submitEditedSite(event);
+            }}
           >
             <div className="drawer-header">
               <div>
-                <p className="section-kicker">EDIT ENTRY / 05</p>
-                <h2>编辑入口</h2>
+                {editIconSettingsOpen && (
+                  <button
+                    type="button"
+                    className="site-icon-settings-back"
+                    onClick={() => setEditIconSettingsOpen(false)}
+                  >
+                    <ChevronLeft size={15} /> 编辑入口
+                  </button>
+                )}
+                <p className="section-kicker">
+                  {editIconSettingsOpen ? "ICON SETTINGS" : "EDIT ENTRY / 05"}
+                </p>
+                <h2>{editIconSettingsOpen ? "设置网站图标" : "编辑入口"}</h2>
                 <p className="ai-modal-intro">
-                  修改名称、链接和分类；关闭编辑模式后仍可正常打开网站。
+                  {editIconSettingsOpen
+                    ? "选择网站自动发现的图标，或上传自己的图片。"
+                    : "修改名称、链接和分类；关闭编辑模式后仍可正常打开网站。"}
                 </p>
               </div>
               <button
@@ -3374,171 +3716,154 @@ export default function Home({
                 <X size={18} />
               </button>
             </div>
-            <div className="form-fields">
-              <label>
-                网站名称
-                <input
-                  autoFocus
-                  value={editingSite.name}
-                  onChange={event =>
-                    setEditingSite({ ...editingSite, name: event.target.value })
+            <div
+              className={`form-fields ${editIconSettingsOpen ? "icon-settings-form-page" : ""}`}
+            >
+              {editIconSettingsOpen ? (
+                <SiteIconSettings
+                  name={editingSite.name}
+                  url={editingSite.url}
+                  iconUrl={editingSite.iconUrl || ""}
+                  scale={editingSite.iconScale ?? 100}
+                  background={editingSite.iconBackground || "#ffffff"}
+                  onChange={value =>
+                    setEditingSite({ ...editingSite, ...value })
                   }
                 />
-              </label>
-              <label>
-                网站地址
-                <input
-                  value={editingSite.url}
-                  onChange={event =>
-                    setEditingSite({ ...editingSite, url: event.target.value })
-                  }
-                  placeholder="https://example.com"
-                />
-              </label>
-              <div className="ai-analyze-card edit-ai-analyze-card">
-                <span className="ai-analyze-icon">
-                  <Sparkles size={18} />
-                </span>
-                <div>
-                  <strong>AI 识别网站信息</strong>
-                  <p>根据当前网址更新名称、简介、分类和标签。</p>
-                </div>
-                <button
-                  type="button"
-                  className="ai-analyze-button"
-                  onClick={analyzeEditedSite}
-                  disabled={analyzingSite}
-                >
-                  {analyzingSite ? "识别中…" : "AI 识别"}
-                </button>
-              </div>
-              <label>
-                一句话简介
-                <textarea
-                  value={editingSite.description}
-                  onChange={event =>
-                    setEditingSite({
-                      ...editingSite,
-                      description: event.target.value,
-                    })
-                  }
-                  rows={3}
-                />
-              </label>
-              <label>
-                分类
-                <select
-                  value={editingSite.category}
-                  onChange={event =>
-                    setEditingSite({
-                      ...editingSite,
-                      category: event.target.value,
-                    })
-                  }
-                >
-                  {contentCategories.map(category => (
-                    <option key={category.id} value={category.id}>
-                      {category.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                网站标签<span className="optional">用逗号分隔，最多 4 个</span>
-                <input
-                  value={editingSite.tags.join("，")}
-                  onChange={event =>
-                    setEditingSite({
-                      ...editingSite,
-                      tags: event.target.value
-                        .split(/[,，]/)
-                        .map(tag => tag.trim())
-                        .slice(0, 4),
-                    })
-                  }
-                />
-              </label>
-              <div className="icon-field">
-                <label>
-                  网站图标<span className="optional">默认抓取 favicon</span>
-                  <input
-                    value={editingSite.iconUrl || ""}
-                    onChange={event =>
-                      setEditingSite({
-                        ...editingSite,
-                        iconUrl: event.target.value,
-                      })
-                    }
-                    placeholder={faviconUrl(editingSite.url)}
-                  />
-                </label>
-                <label className="icon-upload-button">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={event =>
-                      uploadEditedSiteIcon(event.target.files?.[0])
-                    }
-                  />
-                  <span>上传图片</span>
-                </label>
-                <span
-                  className={`site-icon site-icon-${editingSite.iconTone} icon-preview`}
-                  data-custom-background="true"
-                  style={
-                    {
-                      "--site-icon-scale": `${editingSite.iconScale ?? 100}%`,
-                      "--site-icon-background":
-                        editingSite.iconBackground || "#ffffff",
-                    } as CSSProperties
-                  }
-                >
-                  {editingSite.iconUrl ? (
-                    <img
-                      className={
-                        (editingSite.iconScale ?? 100) === 100
-                          ? "site-icon-image-fill"
-                          : ""
+              ) : (
+                <>
+                  <label>
+                    网站名称
+                    <input
+                      autoFocus
+                      value={editingSite.name}
+                      onChange={event =>
+                        setEditingSite({
+                          ...editingSite,
+                          name: event.target.value,
+                        })
                       }
-                      src={editingSite.iconUrl}
-                      alt="图标预览"
                     />
-                  ) : (
-                    <span>{editingSite.name.slice(0, 2) || "图"}</span>
-                  )}
-                </span>
-              </div>
-              <IconCustomization
-                scale={editingSite.iconScale ?? 100}
-                background={editingSite.iconBackground || "#ffffff"}
-                onScaleChange={iconScale =>
-                  setEditingSite({ ...editingSite, iconScale })
-                }
-                onBackgroundChange={iconBackground =>
-                  setEditingSite({ ...editingSite, iconBackground })
-                }
-              />
+                  </label>
+                  <label>
+                    网站地址
+                    <input
+                      value={editingSite.url}
+                      onChange={event =>
+                        setEditingSite({
+                          ...editingSite,
+                          url: event.target.value,
+                        })
+                      }
+                      placeholder="https://example.com"
+                    />
+                  </label>
+                  <div className="ai-analyze-card edit-ai-analyze-card">
+                    <span className="ai-analyze-icon">
+                      <Sparkles size={18} />
+                    </span>
+                    <div>
+                      <strong>AI 识别网站信息</strong>
+                      <p>根据当前网址更新名称、简介、分类和标签。</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="ai-analyze-button"
+                      onClick={analyzeEditedSite}
+                      disabled={analyzingSite}
+                    >
+                      {analyzingSite ? "识别中…" : "AI 识别"}
+                    </button>
+                  </div>
+                  <label>
+                    一句话简介
+                    <textarea
+                      value={editingSite.description}
+                      onChange={event =>
+                        setEditingSite({
+                          ...editingSite,
+                          description: event.target.value,
+                        })
+                      }
+                      rows={3}
+                    />
+                  </label>
+                  <label>
+                    分类
+                    <select
+                      value={editingSite.category}
+                      onChange={event =>
+                        setEditingSite({
+                          ...editingSite,
+                          category: event.target.value,
+                        })
+                      }
+                    >
+                      {contentCategories.map(category => (
+                        <option key={category.id} value={category.id}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    网站标签
+                    <span className="optional">用逗号分隔，最多 4 个</span>
+                    <input
+                      value={editingSite.tags.join("，")}
+                      onChange={event =>
+                        setEditingSite({
+                          ...editingSite,
+                          tags: event.target.value
+                            .split(/[,，]/)
+                            .map(tag => tag.trim())
+                            .slice(0, 4),
+                        })
+                      }
+                    />
+                  </label>
+                  <OpenSiteIconSettingsButton
+                    onClick={() => setEditIconSettingsOpen(true)}
+                  />
+                </>
+              )}
             </div>
             <div className="modal-footer">
-              <span>
-                <Pencil size={14} /> 仅在编辑模式中可修改
-              </span>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="secondary-button"
-                  onClick={() => setEditingSite(null)}
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="primary-button"
-                  disabled={savingSite}
-                >
-                  <Check size={15} /> {savingSite ? "正在保存…" : "保存修改"}
-                </button>
-              </div>
+              {editIconSettingsOpen ? (
+                <>
+                  <span>设置会随入口表单一起保存</span>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => setEditIconSettingsOpen(false)}
+                  >
+                    <Check size={15} /> 完成
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span>
+                    <Pencil size={14} /> 仅在编辑模式中可修改
+                  </span>
+                  <div className="modal-actions">
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => setEditingSite(null)}
+                    >
+                      取消
+                    </button>
+                    <button
+                      type="submit"
+                      className="primary-button"
+                      disabled={savingSite}
+                    >
+                      <Check size={15} />{" "}
+                      {savingSite ? "正在保存…" : "保存修改"}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </form>
         </div>
@@ -3559,13 +3884,42 @@ export default function Home({
             }}
             aria-label="关闭添加窗口"
           />
-          <form className="add-modal glass-panel" onSubmit={submitNewSite}>
+          <form
+            className="add-modal glass-panel"
+            onSubmit={event => {
+              if (newIconSettingsOpen) {
+                event.preventDefault();
+                setNewIconSettingsOpen(false);
+                return;
+              }
+              void submitNewSite(event);
+            }}
+          >
             <div className="drawer-header">
               <div>
-                <p className="section-kicker">AI ENTRY / 03</p>
-                <h2>{analysisSource ? "确认网站信息" : "AI 添加入口"}</h2>
+                {newIconSettingsOpen && (
+                  <button
+                    type="button"
+                    className="site-icon-settings-back"
+                    onClick={() => setNewIconSettingsOpen(false)}
+                  >
+                    <ChevronLeft size={15} /> 返回网站信息
+                  </button>
+                )}
+                <p className="section-kicker">
+                  {newIconSettingsOpen ? "ICON SETTINGS" : "AI ENTRY / 03"}
+                </p>
+                <h2>
+                  {newIconSettingsOpen
+                    ? "设置网站图标"
+                    : analysisSource
+                      ? "确认网站信息"
+                      : "AI 添加入口"}
+                </h2>
                 <p className="ai-modal-intro">
-                  填写网址，让 AI 自动生成简介、分类和标签。
+                  {newIconSettingsOpen
+                    ? "选择网站自动发现的图标，或上传自己的图片。"
+                    : "填写网址，让 AI 自动生成简介、分类和标签。"}
                 </p>
               </div>
               <button
@@ -3580,186 +3934,170 @@ export default function Home({
                 <X size={18} />
               </button>
             </div>
-            <div className="form-fields">
-              <label>
-                网站地址
-                <input
-                  autoFocus
-                  value={newSite.url}
-                  onChange={event => {
-                    setNewSite({
-                      ...newSite,
-                      url: event.target.value,
-                      iconUrl: "",
-                    });
-                    setAnalysisSource(null);
-                  }}
-                  placeholder="https://example.com"
-                />
-              </label>
-              <label>
-                网站名称<span className="optional">可选，AI 可识别</span>
-                <input
-                  value={newSite.name}
-                  onChange={event =>
-                    setNewSite({ ...newSite, name: event.target.value })
+            <div
+              className={`form-fields ${newIconSettingsOpen ? "icon-settings-form-page" : ""}`}
+            >
+              {newIconSettingsOpen ? (
+                <SiteIconSettings
+                  name={newSite.name}
+                  url={newSite.url}
+                  iconUrl={newSite.iconUrl}
+                  scale={newSite.iconScale}
+                  background={newSite.iconBackground}
+                  autoDiscover
+                  onChange={value =>
+                    setNewSite(current => ({ ...current, ...value }))
                   }
-                  placeholder="例如：Arc"
                 />
-              </label>
-              {!analysisSource ? (
-                <div className="ai-analyze-card">
-                  <span className="ai-analyze-icon">
-                    <Sparkles size={18} />
-                  </span>
-                  <div>
-                    <strong>AI 自动整理</strong>
-                    <p>分析网站用途，生成一句话简介、推荐分类和 2–4 个标签。</p>
-                  </div>
-                  <button
-                    type="button"
-                    className="ai-analyze-button"
-                    onClick={analyzeNewSite}
-                    disabled={analyzingSite}
-                  >
-                    {analyzingSite ? "分析中…" : "开始分析"}
-                  </button>
-                </div>
               ) : (
-                <div className="ai-review-panel">
-                  <div className="ai-review-status">
-                    <span>
-                      <Check size={14} />{" "}
-                      {analysisSource === "ai"
-                        ? "AI 分析完成"
-                        : "本地智能分析完成"}
-                    </span>
-                    <button type="button" onClick={analyzeNewSite}>
-                      重新分析
-                    </button>
-                  </div>
+                <>
                   <label>
-                    一句话简介
-                    <textarea
-                      value={newSite.description}
-                      onChange={event =>
-                        setNewSite({
-                          ...newSite,
-                          description: event.target.value,
-                        })
-                      }
-                      rows={3}
-                    />
-                  </label>
-                  <label>
-                    推荐分类
-                    <select
-                      value={newSite.category}
-                      onChange={event =>
-                        setNewSite({ ...newSite, category: event.target.value })
-                      }
-                    >
-                      {contentCategories.map(category => (
-                        <option key={category.id} value={category.id}>
-                          {category.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    网站标签<span className="optional">用逗号分隔，可修改</span>
+                    网站地址
                     <input
-                      value={newSite.tags.join("，")}
-                      onChange={event =>
-                        setNewSite({
-                          ...newSite,
-                          tags: event.target.value
-                            .split(/[,，]/)
-                            .map(tag => tag.trim())
-                            .filter(Boolean)
-                            .slice(0, 4),
-                        })
-                      }
-                      placeholder="效率，协作"
+                      autoFocus
+                      value={newSite.url}
+                      onChange={event => {
+                        setNewSite(current => ({
+                          ...current,
+                          url: event.target.value,
+                          iconUrl: current.iconUrl.startsWith("data:")
+                            ? current.iconUrl
+                            : "",
+                        }));
+                        setAnalysisSource(null);
+                      }}
+                      placeholder="https://example.com"
                     />
                   </label>
-                  <div className="icon-field">
-                    <label>
-                      网站图标<span className="optional">默认抓取 favicon</span>
-                      <input
-                        value={newSite.iconUrl}
-                        onChange={event =>
-                          setNewSite({
-                            ...newSite,
-                            iconUrl: event.target.value,
-                          })
-                        }
-                        placeholder={
-                          faviconUrl(newSite.url) ||
-                          "https://example.com/favicon.ico"
-                        }
-                      />
-                    </label>
-                    <label className="icon-upload-button">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={event =>
-                          uploadSiteIcon(event.target.files?.[0])
-                        }
-                      />
-                      <span>上传图片</span>
-                    </label>
-                    <span
-                      className="icon-preview"
-                      style={
-                        {
-                          "--site-icon-scale": `${newSite.iconScale}%`,
-                          background: newSite.iconBackground,
-                        } as CSSProperties
+                  <label>
+                    网站名称<span className="optional">可选，AI 可识别</span>
+                    <input
+                      value={newSite.name}
+                      onChange={event =>
+                        setNewSite({ ...newSite, name: event.target.value })
                       }
-                    >
-                      {newSite.iconUrl ? (
-                        <img
-                          className={
-                            newSite.iconScale === 100
-                              ? "site-icon-image-fill"
-                              : ""
+                      placeholder="例如：Arc"
+                    />
+                  </label>
+                  {!analysisSource ? (
+                    <div className="ai-analyze-card">
+                      <span className="ai-analyze-icon">
+                        <Sparkles size={18} />
+                      </span>
+                      <div>
+                        <strong>AI 自动整理</strong>
+                        <p>
+                          分析网站用途，生成一句话简介、推荐分类和 2–4 个标签。
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="ai-analyze-button"
+                        onClick={analyzeNewSite}
+                        disabled={analyzingSite}
+                      >
+                        {analyzingSite ? "分析中…" : "开始分析"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="ai-review-panel">
+                      <div className="ai-review-status">
+                        <span>
+                          <Check size={14} />{" "}
+                          {analysisSource === "ai"
+                            ? "AI 分析完成"
+                            : "本地智能分析完成"}
+                        </span>
+                        <button type="button" onClick={analyzeNewSite}>
+                          重新分析
+                        </button>
+                      </div>
+                      <label>
+                        一句话简介
+                        <textarea
+                          value={newSite.description}
+                          onChange={event =>
+                            setNewSite({
+                              ...newSite,
+                              description: event.target.value,
+                            })
                           }
-                          src={newSite.iconUrl}
-                          alt="图标预览"
+                          rows={3}
                         />
-                      ) : (
-                        <span>{newSite.name.slice(0, 2) || "图"}</span>
-                      )}
-                    </span>
-                  </div>
-                  <IconCustomization
-                    scale={newSite.iconScale}
-                    background={newSite.iconBackground}
-                    onScaleChange={iconScale =>
-                      setNewSite({ ...newSite, iconScale })
-                    }
-                    onBackgroundChange={iconBackground =>
-                      setNewSite({ ...newSite, iconBackground })
-                    }
-                  />
-                </div>
+                      </label>
+                      <label>
+                        推荐分类
+                        <select
+                          value={newSite.category}
+                          onChange={event =>
+                            setNewSite({
+                              ...newSite,
+                              category: event.target.value,
+                            })
+                          }
+                        >
+                          {contentCategories.map(category => (
+                            <option key={category.id} value={category.id}>
+                              {category.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        网站标签
+                        <span className="optional">用逗号分隔，可修改</span>
+                        <input
+                          value={newSite.tags.join("，")}
+                          onChange={event =>
+                            setNewSite({
+                              ...newSite,
+                              tags: event.target.value
+                                .split(/[,，]/)
+                                .map(tag => tag.trim())
+                                .filter(Boolean)
+                                .slice(0, 4),
+                            })
+                          }
+                          placeholder="效率，协作"
+                        />
+                      </label>
+                      <OpenSiteIconSettingsButton
+                        onClick={() => setNewIconSettingsOpen(true)}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
             <div className="modal-footer">
-              <span>
-                <Tags size={14} />{" "}
-                {analysisSource ? "请确认或修改后保存" : "分析不会自动保存"}
-              </span>
-              {analysisSource && (
-                <button
-                  type="submit"
-                  className="primary-button"
-                  disabled={savingSite}
-                >
-                  <Check size={15} /> {savingSite ? "正在保存…" : "确认并保存"}
-                </button>
+              {newIconSettingsOpen ? (
+                <>
+                  <span>设置会随入口表单一起保存</span>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => setNewIconSettingsOpen(false)}
+                  >
+                    <Check size={15} /> 完成
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span>
+                    <Tags size={14} />{" "}
+                    {analysisSource ? "请确认或修改后保存" : "分析不会自动保存"}
+                  </span>
+                  {analysisSource && (
+                    <button
+                      type="submit"
+                      className="primary-button"
+                      disabled={savingSite}
+                    >
+                      <Check size={15} />{" "}
+                      {savingSite ? "正在保存…" : "确认并保存"}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </form>

@@ -1,22 +1,42 @@
 # Liquid Glass Nav
 
-一个带有 Liquid Glass 视觉效果的私人网址导航站。项目使用 React、TypeScript、Vite 和 Tailwind CSS 构建前端，通过 Cloudflare Pages Functions 提供登录、网站管理和 AI 信息整理接口，并使用 Cloudflare D1 持久化网站数据。
+一个支持云端同步和 AI 信息整理的私人网址导航站。界面参考 Apple 产品页的视觉语言，以白色与浅灰画布、克制的系统蓝、平面卡片和宽松排版构建，同时保留完整的暗色主题与移动端体验。
+
+项目使用 React、TypeScript、Vite 和 Tailwind CSS 构建前端，通过 Cloudflare Pages Functions 提供登录、网站管理、网站图标发现和 AI 信息整理接口，并使用 Cloudflare D1 持久化网站数据。
 
 ## 功能与特性
 
-- Liquid Glass 风格界面，支持亮色和暗色主题
+- Apple 风格平面界面，支持亮色和暗色主题
 - 响应式布局，适配桌面端和移动端
-- 网站搜索、分类筛选、收藏和紧凑视图
+- 网站搜索、分类筛选、收藏，以及舒适、紧凑、小型和 Mini 四种入口视图
 - 新增、编辑、删除和拖拽排序网站
 - 自定义分类、分类图标和显示顺序
 - 自定义背景颜色、背景图片、模糊度、亮度和对比度
-- 自动读取网站 favicon，也可上传自定义图标
+- 自动发现 favicon、Apple Touch Icon 和 Web App Manifest 图标，也可上传自定义图片
+- 支持调整网站图标的缩放比例、底色和颜色预设
 - AI 自动生成网站名称、简介、分类和标签
 - 支持公开只读浏览，使用单一密码进入管理模式，登录状态通过 `HttpOnly` Cookie 保存 30 天
 - D1 云端存储，浏览器 `localStorage` 作为缓存和离线降级
 - 首次部署默认为空数据，由用户自行创建分类和入口
 
+## 设计与性能
+
+当前界面规范记录在 [`DESIGN.md`](DESIGN.md)。重构只调整视觉表现，没有改变侧栏、顶部栏、Hero、搜索、入口网格、设置抽屉和编辑弹窗的页面结构与交互流程。
+
+为了在入口较多时保持顺滑滚动，当前实现：
+
+- 使用实色卡片替代逐卡片 `backdrop-filter` 模糊
+- 移除卡片的多层阴影、装饰渐变和滚动期间容易触发的位移动画
+- 保留 `content-visibility`，减少屏幕外卡片的绘制工作
+- 为网站图标启用延迟加载和异步解码
+- 在编辑模式中使用透明度区分层级，不再模糊整个页面
+
 ## 更新日志
+
+### 2026-08-31 V1.1.0
+
+- 移除毛玻璃效果
+
 
 ### 2026-08-24 V1.0.6
 
@@ -76,6 +96,7 @@ functions/api/          Cloudflare Pages Functions API
   sites.ts              D1 网站读取与写入
   state.ts              D1 分类、收藏与界面偏好同步
   analyze-site.ts       AI 网站信息分析
+  site-icons.ts         网站 favicon、Touch Icon 与 Manifest 图标发现
 migrations/             D1 数据库迁移
 shared/                 前后端共享逻辑
 dist/public/            Pages 构建输出目录
@@ -293,14 +314,14 @@ D1 保存：
 
 - 网站名称、URL 和简介
 - 分类与分类标签
-- 图标与图标样式
+- 图标地址、缩放比例、底色与图标样式
 - 网站标签
 - 推荐状态和排序顺序
 - 自定义分类与分类顺序
 - 收藏
 - 工作台名称、主题、背景和布局偏好
 
-浏览器 `localStorage` 仅作为缓存和离线降级。清除某台设备的浏览器数据不会改变 D1 主数据；重新登录后会再次从云端加载。部署此版本前必须应用 `0005_shared_workspace_state.sql` 迁移。
+浏览器 `localStorage` 仅作为缓存和离线降级。清除某台设备的浏览器数据不会改变 D1 主数据；重新登录后会再次从云端加载。部署此版本前必须按顺序应用现有迁移，包括 `0005_shared_workspace_state.sql` 和 `0006_site_icon_appearance.sql`。
 
 ## 常用命令
 
