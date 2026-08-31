@@ -21,7 +21,7 @@ async function startServer() {
   const server = createServer(app);
   const navPassword = process.env.NAV_PASSWORD?.trim();
 
-  app.use(express.json({ limit: "16kb" }));
+  app.use(express.json({ limit: "64kb" }));
 
   const requestIsSecure = (req: express.Request) =>
     req.secure || req.headers["x-forwarded-proto"] === "https";

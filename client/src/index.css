@@ -575,16 +575,6 @@ a {
   );
   animation: float-three 15s ease-in-out infinite alternate;
 }
-.grain-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2;
-  pointer-events: none;
-  opacity: 0.035;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.48'/%3E%3C/svg%3E");
-  mix-blend-mode: soft-light;
-}
-
 .sidebar {
   position: relative;
   z-index: 10;
@@ -3482,6 +3472,161 @@ html[data-app-skin="light"] .site-icon-settings-panel {
   }
 }
 
+/* Edit mode selection and bulk actions. */
+.edit-mode-hint-slot-visible {
+  max-height: 240px;
+}
+.edit-mode-hint {
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  min-height: 48px;
+  padding: 10px 12px;
+}
+.edit-mode-summary,
+.edit-mode-actions,
+.bulk-edit-controls,
+.bulk-edit-group {
+  display: flex;
+  align-items: center;
+}
+.edit-mode-summary {
+  flex: 1 1 320px;
+  gap: 9px;
+  min-width: 0;
+}
+.edit-mode-summary > span:last-child {
+  overflow: hidden;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-mode-actions {
+  gap: 8px;
+  margin-left: auto;
+}
+.edit-mode-hint .bulk-select-all {
+  color: var(--text);
+  background: var(--apple-surface);
+}
+.edit-mode-hint .bulk-select-all:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--apple-hover);
+}
+.bulk-edit-controls {
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.bulk-edit-group {
+  gap: 6px;
+}
+.bulk-edit-group label {
+  color: var(--text-faint);
+  font-size: var(--type-caption);
+  white-space: nowrap;
+}
+.bulk-edit-group select,
+.bulk-edit-group input {
+  min-width: 120px;
+  height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: 0;
+  color: var(--text);
+  background: var(--apple-surface);
+  font-size: var(--type-label);
+}
+.bulk-edit-group input {
+  width: 150px;
+}
+.bulk-edit-group select:focus,
+.bulk-edit-group input:focus {
+  border-color: var(--apple-blue);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.1);
+}
+.edit-mode-hint .bulk-delete-button,
+.edit-mode-hint .bulk-delete-button:hover:not(:disabled) {
+  margin-left: auto;
+  color: #fff;
+  background: #ff3b30;
+}
+.site-card-editing .site-select-button {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  z-index: 101;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 2px solid var(--apple-surface);
+  border-radius: 50%;
+  color: #fff;
+  background: var(--apple-surface-alt);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  transition:
+    background-color 160ms ease,
+    transform 160ms ease;
+}
+.site-card-editing .site-select-button[aria-pressed="true"] {
+  background: var(--apple-blue);
+}
+.site-card-editing .site-select-button:hover {
+  transform: scale(1.06);
+}
+.site-grid-editing .site-card-selected,
+.skin-light .site-grid-editing .site-card-selected {
+  border-color: var(--apple-blue);
+  box-shadow: 0 0 0 3px rgba(0, 113, 227, 0.14);
+}
+.grid-mini.site-grid-editing .site-select-button {
+  top: 5px;
+  left: 5px;
+  width: 23px;
+  height: 23px;
+}
+
+@media (max-width: 780px) {
+  .edit-mode-hint-slot-visible {
+    max-height: 360px;
+  }
+  .edit-mode-summary,
+  .edit-mode-actions {
+    flex-basis: 100%;
+  }
+  .edit-mode-actions {
+    justify-content: space-between;
+    margin-left: 0;
+  }
+  .bulk-edit-controls,
+  .bulk-edit-group {
+    align-items: stretch;
+  }
+  .bulk-edit-controls {
+    flex-direction: column;
+  }
+  .bulk-edit-group {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .bulk-edit-group label {
+    grid-column: 1 / -1;
+  }
+  .bulk-edit-group select,
+  .bulk-edit-group input {
+    width: 100%;
+    min-width: 0;
+  }
+  .edit-mode-hint .bulk-delete-button {
+    justify-content: center;
+    margin-left: 0;
+  }
+}
+
 /* Apple-inspired liquid glass refresh: neutral materials, white highlights and system blue. */
 .app-shell {
   --ink: #050506;
@@ -3596,10 +3741,6 @@ select:focus-visible {
     transparent 70%
   );
 }
-.grain-overlay {
-  opacity: 0.018;
-}
-
 .sidebar {
   margin: 12px 0 12px 12px;
   min-height: calc(100vh - 24px);
@@ -6361,7 +6502,6 @@ html[data-app-skin="light"] body {
       width: auto;
       height: auto;
     }
-    .grain-overlay,
     .workspace-background-overlay,
     .workspace-background-image {
       inset: -96px -36px;
@@ -6595,8 +6735,7 @@ select:focus-visible {
 .app-shell.background-custom {
   background: var(--custom-background);
 }
-.ambient-orb,
-.grain-overlay {
+.ambient-orb {
   display: none;
 }
 
@@ -6664,7 +6803,7 @@ select:focus-visible {
 /* Navigation and global frame */
 .sidebar {
   border-color: var(--line);
-  border-radius: 0;
+  border-radius: var(--radius-card-apple);
   background: var(--apple-surface);
   box-shadow: none;
   backdrop-filter: none;
@@ -6828,16 +6967,34 @@ select:focus-visible {
   display: none;
 }
 .search-panel {
-  border: 1px solid var(--line);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 999px;
-  background: var(--apple-surface);
-  transition: border-color 160ms ease, background-color 160ms ease;
+  background: rgba(44, 44, 46, 0.68);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 12px 32px rgba(0, 0, 0, 0.14);
+  backdrop-filter: blur(28px) saturate(155%);
+  -webkit-backdrop-filter: blur(28px) saturate(155%);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+.skin-light .search-panel {
+  border-color: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.96),
+    0 12px 32px rgba(31, 41, 55, 0.08);
 }
 .search-panel:hover,
 .search-panel:focus-within {
   border-color: var(--text-faint);
-  background: var(--apple-surface);
-  box-shadow: none;
+  background: rgba(44, 44, 46, 0.76);
+}
+.skin-light .search-panel:hover,
+.skin-light .search-panel:focus-within {
+  background: rgba(255, 255, 255, 0.7);
 }
 .search-panel:focus-within {
   border-color: var(--apple-blue);
@@ -7199,8 +7356,8 @@ html[data-app-skin="light"] .site-icon-settings-panel {
 
 @media (min-width: 781px) {
   .search-panel {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    backdrop-filter: blur(28px) saturate(155%);
+    -webkit-backdrop-filter: blur(28px) saturate(155%);
     will-change: auto;
     transform: none;
   }
@@ -7249,5 +7406,545 @@ html[data-app-skin="light"] .site-icon-settings-panel {
   .search-panel {
     animation: none !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+/* Keep enough document flow reserved for the expanded bulk toolbar. */
+.edit-mode-hint-slot-visible {
+  max-height: 240px;
+}
+@media (max-width: 780px) {
+  .edit-mode-hint-slot-visible {
+    max-height: 360px;
+  }
+}
+
+/* Entry icons scale their corner radius with the rendered icon size. */
+.site-icon,
+.grid-large .site-icon,
+.grid-medium .site-icon,
+.grid-small .site-icon,
+.grid-mini .site-icon {
+  border-radius: 24%;
+}
+
+/* Match the generous card radius with progressively inset card content. */
+.grid-large .site-card {
+  padding: 22px 22px 18px;
+}
+
+.grid-medium .site-card {
+  padding: 19px 19px 16px;
+}
+
+.grid-small .site-card {
+  padding: 16px 16px 14px;
+}
+
+.grid-mini .site-card,
+.grid-mini .site-card-placeholder {
+  padding: 8px 8px 10px;
+}
+
+/* Reserve the top row for selection and edit controls. */
+.grid-large.site-grid-editing .site-card {
+  padding-top: 46px;
+}
+
+.grid-medium.site-grid-editing .site-card {
+  padding-top: 43px;
+}
+
+.grid-small.site-grid-editing .site-card {
+  padding-top: 40px;
+}
+
+/* Mini cards stay compact: shrink the icon and seat it below the controls. */
+.grid-mini.site-grid-editing .site-card {
+  min-height: 104px;
+}
+
+.grid-mini.site-grid-editing .site-card-topline {
+  height: 42px;
+  margin-top: 24px;
+}
+
+.grid-mini.site-grid-editing .site-icon {
+  width: 32px;
+  height: 32px;
+}
+
+.grid-mini.site-grid-editing .site-card-content {
+  padding-top: 4px;
+}
+
+@media (max-width: 780px) {
+  .grid-large .site-card {
+    padding: 18px 18px 16px;
+  }
+
+  .grid-medium .site-card {
+    padding: 16px 16px 14px;
+  }
+
+  .grid-small .site-card {
+    padding: 14px 14px 12px;
+  }
+
+  .grid-large.site-grid-editing .site-card {
+    padding-top: 43px;
+  }
+
+  .grid-medium.site-grid-editing .site-card {
+    padding-top: 40px;
+  }
+
+  .grid-small.site-grid-editing .site-card {
+    padding-top: 38px;
+  }
+
+  .grid-mini.site-grid-editing .site-card {
+    min-height: 96px;
+  }
+
+  .grid-mini.site-grid-editing .site-card-topline {
+    height: 36px;
+    margin-top: 22px;
+  }
+
+  .grid-mini.site-grid-editing .site-icon {
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* Flow backgrounds migrated from the temporary `flow bg css` collection. */
+.app-shell.background-flow-emerald {
+  --flow-1: #f0fbef;
+  --flow-2: #8fe3b0;
+  --flow-3: #22c79a;
+  --flow-4: #0b5f51;
+  --flow-5: #8fe3b0;
+}
+
+.app-shell.background-flow-iridescent-cloud {
+  --flow-1: #eaf4fc;
+  --flow-2: #1e50a2;
+  --flow-3: #f09199;
+  --flow-4: #895b8a;
+  --flow-5: #1e50a2;
+}
+
+.app-shell.background-flow-lagoon {
+  --flow-1: #eafbf7;
+  --flow-2: #5ce3e6;
+  --flow-3: #0f9cc2;
+  --flow-4: #274a78;
+  --flow-5: #5ce3e6;
+}
+
+.app-shell.background-flow-oil-film {
+  --flow-1: #181b3a;
+  --flow-2: #007bbb;
+  --flow-3: #00a3af;
+  --flow-4: #824880;
+  --flow-5: #f8e58c;
+}
+
+.app-shell.background-flow-opal {
+  --flow-1: #f6f9ff;
+  --flow-2: #9be0e8;
+  --flow-3: #c4b5f7;
+  --flow-4: #f8b8d9;
+  --flow-5: #9be0e8;
+}
+
+.app-shell.background-flow-pearl-light {
+  --flow-1: #eaf4fc;
+  --flow-2: #d6bbc6;
+  --flow-3: #a2d7dd;
+  --flow-4: #f8e58c;
+  --flow-5: #b28fce;
+}
+
+.app-shell.background-flow-tropical-night {
+  --flow-1: #0d0d0d;
+  --flow-2: #460e44;
+  --flow-3: #824880;
+  --flow-4: #00a3af;
+  --flow-5: #68be8d;
+}
+
+.app-shell[class*="background-flow-"] {
+  background: linear-gradient(
+    135deg,
+    var(--flow-1),
+    var(--flow-2),
+    var(--flow-3),
+    var(--flow-4),
+    var(--flow-5)
+  );
+}
+
+.app-shell.flow-background-css[class*="background-flow-"] {
+  background-size: 280% 280%;
+  animation: flow-background-drift var(--flow-animation-duration, 16s)
+    ease-in-out infinite alternate;
+}
+
+@keyframes flow-background-drift {
+  from {
+    background-position: 0% 18%;
+  }
+  to {
+    background-position: 100% 82%;
+  }
+}
+
+.flow-background-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.background-option-flow {
+  --flow-preview: linear-gradient(135deg, #f0fbef, #22c79a, #0b5f51);
+}
+
+.background-option-flow::after,
+.background-option-flow > span {
+  background: var(--flow-preview);
+  background-size: 220% 220%;
+  animation: flow-preview-drift var(--flow-animation-duration, 16s) ease-in-out
+    infinite alternate;
+}
+
+.background-option-flow::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 38% 0 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.48));
+  pointer-events: none;
+}
+
+.background-option-flow strong,
+.background-option-flow small {
+  color: #fff;
+  text-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+}
+
+.flow-speed-setting {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.045);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.09);
+}
+
+.flow-speed-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.flow-speed-heading strong,
+.flow-speed-heading small {
+  display: block;
+}
+
+.flow-speed-heading strong {
+  color: var(--text);
+  font-size: var(--type-label);
+  font-weight: 600;
+}
+
+.flow-speed-heading small {
+  margin-top: 3px;
+  color: var(--text-faint);
+  font-size: var(--type-caption);
+  line-height: 1.4;
+}
+
+.flow-speed-heading > span {
+  flex: 0 0 auto;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: #64d2ff;
+  background: rgba(10, 132, 255, 0.12);
+  font-size: var(--type-caption);
+  font-weight: 600;
+}
+
+.flow-speed-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.flow-speed-option {
+  min-width: 0;
+  min-height: 48px;
+  padding: 7px 6px;
+  border-radius: 10px;
+  color: var(--text-faint);
+  text-align: center;
+  transition: 160ms var(--ease-out);
+}
+
+.flow-speed-option strong,
+.flow-speed-option small {
+  display: block;
+}
+
+.flow-speed-option strong {
+  font-size: var(--type-label);
+  font-weight: 600;
+}
+
+.flow-speed-option small {
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: var(--type-micro);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flow-speed-option:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.flow-speed-option-active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.13);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.skin-light .flow-speed-setting {
+  background: rgba(255, 255, 255, 0.48);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86);
+}
+
+.skin-light .flow-speed-options {
+  background: rgba(38, 48, 62, 0.08);
+}
+
+.skin-light .flow-speed-option-active {
+  color: #1d1d1f;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 1px 0 #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell.flow-background-css[class*="background-flow-"] {
+    animation: none;
+  }
+}
+
+@keyframes flow-preview-drift {
+  from {
+    background-position: 0% 20%;
+  }
+  to {
+    background-position: 100% 80%;
+  }
+}
+
+/* Lightweight sidebar-inspired material for every entry: no per-card blur. */
+.app-shell {
+  --entry-card-surface: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.12),
+      rgba(255, 255, 255, 0.035) 48%,
+      rgba(255, 255, 255, 0.075)
+    ),
+    rgba(20, 20, 22, 0.72);
+  --entry-card-hover: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.16),
+      rgba(255, 255, 255, 0.055) 48%,
+      rgba(255, 255, 255, 0.1)
+    ),
+    rgba(28, 28, 30, 0.8);
+  --entry-card-highlight: rgba(255, 255, 255, 0.22);
+}
+
+.app-shell.skin-light {
+  --entry-card-surface: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.78),
+      rgba(255, 255, 255, 0.42) 52%,
+      rgba(255, 255, 255, 0.58)
+    ),
+    rgba(255, 255, 255, 0.42);
+  --entry-card-hover: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.9),
+      rgba(255, 255, 255, 0.56) 52%,
+      rgba(255, 255, 255, 0.7)
+    ),
+    rgba(255, 255, 255, 0.52);
+  --entry-card-highlight: rgba(255, 255, 255, 0.94);
+}
+
+.site-grid .site-card,
+.site-grid .site-card:nth-child(4n + 4),
+.site-grid .site-card:nth-child(4n + 5),
+.site-grid .site-card-featured,
+.site-grid .site-card-tall,
+.site-grid.site-grid-editing .site-card,
+.skin-light .site-grid.site-grid-editing .site-card {
+  background: var(--entry-card-surface) !important;
+  box-shadow: inset 0 1px 0 var(--entry-card-highlight);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  opacity: 1;
+}
+
+.site-grid .site-card:hover,
+.site-grid .site-card:nth-child(4n + 4):hover,
+.site-grid .site-card:nth-child(4n + 5):hover,
+.site-grid .site-card-featured:hover,
+.site-grid.site-grid-editing .site-card:hover:not(.site-card-dragging) {
+  background: var(--entry-card-hover) !important;
+  box-shadow: inset 0 1px 0 var(--entry-card-highlight);
+}
+
+/* DESIGN.md Surface Level 2: daylight interactive states use the neutral
+   Hover Wash. Blue remains reserved for primary CTA actions. */
+.app-shell.skin-light .site-grid .site-card:hover,
+.app-shell.skin-light .site-grid .site-card:nth-child(4n + 4):hover,
+.app-shell.skin-light .site-grid .site-card:nth-child(4n + 5):hover,
+.app-shell.skin-light .site-grid .site-card-featured:hover,
+.app-shell.skin-light .site-grid.site-grid-editing .site-card:hover:not(.site-card-dragging) {
+  border-color: transparent;
+  background: var(--apple-cool-wash) !important;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Liquid-glass recovery: keep the dark navigation material translucent so the
+   selected page background remains visible through it. */
+.app-shell:not(.skin-light) .sidebar {
+  border-right-color: rgba(255, 255, 255, 0.16);
+  background:
+    linear-gradient(155deg, rgba(40, 43, 50, 0.76), rgba(10, 11, 14, 0.6)),
+    rgba(10, 11, 14, 0.5);
+  box-shadow:
+    inset -1px 0 rgba(255, 255, 255, 0.08),
+    18px 0 42px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(30px) saturate(145%);
+  -webkit-backdrop-filter: blur(30px) saturate(145%);
+}
+
+/* Opening Settings must defocus the working surface, while the drawer itself
+   remains a separate translucent layer rather than an opaque dark panel. */
+.drawer-backdrop {
+  background: rgba(3, 7, 12, 0.36);
+  backdrop-filter: blur(14px) saturate(82%);
+  -webkit-backdrop-filter: blur(14px) saturate(82%);
+}
+
+.app-shell:not(.skin-light) .settings-drawer {
+  border-left-color: rgba(255, 255, 255, 0.2);
+  background:
+    linear-gradient(160deg, rgba(35, 40, 49, 0.8), rgba(12, 14, 20, 0.7)),
+    rgba(12, 14, 20, 0.54);
+  box-shadow:
+    inset 1px 0 rgba(255, 255, 255, 0.1),
+    -26px 0 70px rgba(0, 0, 0, 0.28);
+  backdrop-filter: blur(32px) saturate(145%);
+  -webkit-backdrop-filter: blur(32px) saturate(145%);
+}
+
+/* One shared easing system for interactive controls and changing surfaces.
+   It covers controls that previously changed state abruptly, without animating
+   layout-only nodes or continuous canvas effects. */
+:where(
+    a,
+    button,
+    input,
+    textarea,
+    select,
+    summary,
+    [role="button"],
+    [role="tab"],
+    [role="switch"]
+  ) {
+  transition:
+    color 180ms var(--ease-out, ease-out),
+    background-color 180ms var(--ease-out, ease-out),
+    border-color 180ms var(--ease-out, ease-out),
+    box-shadow 180ms var(--ease-out, ease-out),
+    opacity 180ms var(--ease-out, ease-out),
+    transform 180ms var(--ease-out, ease-out);
+}
+
+.sidebar,
+.main-content,
+.topbar,
+.hero-section,
+.search-panel,
+.overview-row,
+.workspace-bottom,
+.bottom-strip,
+.empty-state,
+.settings-drawer,
+.add-modal,
+.edit-site-modal,
+.site-icon-settings-panel {
+  transition:
+    background-color 240ms var(--ease-out, ease-out),
+    border-color 240ms var(--ease-out, ease-out),
+    box-shadow 240ms var(--ease-out, ease-out),
+    opacity 240ms var(--ease-out, ease-out),
+    filter 240ms var(--ease-out, ease-out);
+}
+
+.sidebar {
+  transition:
+    flex-basis 280ms var(--ease-out, ease-out),
+    padding 280ms var(--ease-out, ease-out),
+    background 240ms var(--ease-out, ease-out),
+    border-color 240ms var(--ease-out, ease-out),
+    box-shadow 240ms var(--ease-out, ease-out),
+    opacity 240ms var(--ease-out, ease-out);
+}
+
+/* Cards had their entrance motion disabled by the final reference override.
+   Restore a short, staggered fade/settle motion for cards added to the grid. */
+.site-grid .site-card {
+  animation: card-in 320ms var(--ease-out, ease-out) both;
+  animation-delay: calc(var(--card-index, 0) * 28ms);
+  transition:
+    background 180ms var(--ease-out, ease-out),
+    box-shadow 180ms var(--ease-out, ease-out),
+    opacity 180ms var(--ease-out, ease-out),
+    transform 180ms var(--ease-out, ease-out);
+}
+
+.site-grid .site-card:nth-child(1) { --card-index: 0; }
+.site-grid .site-card:nth-child(2) { --card-index: 1; }
+.site-grid .site-card:nth-child(3) { --card-index: 2; }
+.site-grid .site-card:nth-child(4) { --card-index: 3; }
+.site-grid .site-card:nth-child(5) { --card-index: 4; }
+.site-grid .site-card:nth-child(6) { --card-index: 5; }
+.site-grid .site-card:nth-child(7) { --card-index: 6; }
+.site-grid .site-card:nth-child(8) { --card-index: 7; }
+
+@media (prefers-reduced-motion: reduce) {
+  .site-grid .site-card {
+    animation: none;
+    transition-duration: 0.01ms;
   }
 }

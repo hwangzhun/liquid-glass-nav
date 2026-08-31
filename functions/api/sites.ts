@@ -88,7 +88,7 @@ function sanitizeSite(value: unknown, fallbackSortOrder = 0): SitePayload {
           .filter((tag): tag is string => typeof tag === "string")
           .map(tag => tag.trim().slice(0, 24))
           .filter(Boolean)
-          .slice(0, 8)
+          .slice(0, 1)
       : [],
     featured: data.featured === true,
     accent:
@@ -103,7 +103,14 @@ function sanitizeSite(value: unknown, fallbackSortOrder = 0): SitePayload {
 function toSite(row: SiteRow): SitePayload {
   let tags: string[] = [];
   try {
-    tags = JSON.parse(row.tags) as string[];
+    const parsed = JSON.parse(row.tags) as unknown;
+    tags = Array.isArray(parsed)
+      ? parsed
+          .filter((tag): tag is string => typeof tag === "string")
+          .map(tag => tag.trim().slice(0, 24))
+          .filter(Boolean)
+          .slice(0, 1)
+      : [];
   } catch {
     /* keep empty tags */
   }
@@ -182,10 +189,12 @@ async function migrateLegacyWorkspaceIfNeeded(context: PagesContext) {
     `
     INSERT OR IGNORE INTO sites (
       workspace_id, id, name, url, description, category, category_label,
-      icon, icon_url, icon_tone, tags, featured, accent, created_at, updated_at, sort_order
+      icon, icon_url, icon_scale, icon_background, icon_tone, tags,
+      featured, accent, created_at, updated_at, sort_order
     )
     SELECT ?, id, name, url, description, category, category_label,
-      icon, icon_url, icon_tone, tags, featured, accent, created_at, updated_at, sort_order
+      icon, icon_url, icon_scale, icon_background, icon_tone, tags,
+      featured, accent, created_at, updated_at, sort_order
     FROM sites
     WHERE workspace_id <> ?
     ORDER BY updated_at DESC
@@ -243,16 +252,30 @@ export async function onRequestDelete(context: PagesContext) {
   if (unauthorized) return unauthorized;
   try {
     const workspace = workspaceId(context.request);
-    const body = (await context.request.json()) as { id?: unknown };
-    if (typeof body.id !== "string" || !body.id.trim())
-      throw new Error("入口 ID 无效。");
-    const id = body.id.trim().slice(0, 120);
-    await context.env.NAV_DB.prepare(
-      "DELETE FROM sites WHERE workspace_id = ? AND id = ?"
-    )
-      .bind(workspace, id)
-      .run();
-    return json({ success: true, id });
+    const body = (await context.request.json()) as {
+      id?: unknown;
+      ids?: unknown;
+    };
+    const rawIds = Array.isArray(body.ids) ? body.ids : [body.id];
+    const ids = Array.from(
+      new Set(
+        rawIds
+          .filter((id): id is string => typeof id === "string")
+          .map(id => id.trim().slice(0, 120))
+          .filter(Boolean)
+      )
+    );
+    if (!ids.length || ids.length > 500) throw new Error("入口 ID 无效。");
+    for (let index = 0; index < ids.length; index += 80) {
+      const chunk = ids.slice(index, index + 80);
+      const placeholders = chunk.map(() => "?").join(", ");
+      await context.env.NAV_DB.prepare(
+        `DELETE FROM sites WHERE workspace_id = ? AND id IN (${placeholders})`
+      )
+        .bind(workspace, ...chunk)
+        .run();
+    }
+    return json({ success: true, ids });
   } catch (error) {
     return json(
       { error: error instanceof Error ? error.message : "删除网站失败。" },

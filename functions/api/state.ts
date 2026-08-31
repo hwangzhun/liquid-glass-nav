@@ -45,6 +45,7 @@ const preferenceKeys = new Set([
   "siteName",
   "sidebarCollapsed",
   "backgroundMode",
+  "backgroundAnimationSpeed",
   "customBackground",
   "backgroundImage",
   "backgroundImageBlur",

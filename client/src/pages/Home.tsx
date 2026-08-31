@@ -50,11 +50,26 @@ import {
 import { flushSync } from "react-dom";
 import packageJson from "../../../package.json";
 import { toast } from "sonner";
+import { FlowBackgroundCanvas } from "../components/FlowBackgroundCanvas";
 
 type CategoryId = string;
 type SortMode = "curated" | "az";
 type ViewMode = "large" | "medium" | "small" | "mini";
-type BackgroundMode = "mist" | "blue" | "midnight" | "custom";
+type FlowBackgroundMode =
+  | "flow-emerald"
+  | "flow-iridescent-cloud"
+  | "flow-lagoon"
+  | "flow-oil-film"
+  | "flow-opal"
+  | "flow-pearl-light"
+  | "flow-tropical-night";
+type FlowAnimationSpeed = "slow" | "normal" | "fast";
+type BackgroundMode =
+  | "mist"
+  | "blue"
+  | "midnight"
+  | "custom"
+  | FlowBackgroundMode;
 type AnalysisSource = "ai" | "local";
 
 type SiteIconCandidate = {
@@ -71,6 +86,7 @@ type CloudPreferences = {
   siteName?: string;
   sidebarCollapsed?: boolean;
   backgroundMode?: BackgroundMode;
+  backgroundAnimationSpeed?: FlowAnimationSpeed;
   customBackground?: string;
   backgroundImage?: string;
   backgroundImageBlur?: number;
@@ -183,6 +199,84 @@ const defaultCategoryMeta: Category[] = [
   },
 ];
 
+const flowBackgroundPresets: Array<{
+  id: FlowBackgroundMode;
+  name: string;
+  description: string;
+  colors: readonly string[];
+  preview: string;
+}> = [
+  {
+    id: "flow-emerald",
+    name: "翡翠",
+    description: "翠绿流光",
+    colors: ["#f0fbef", "#8fe3b0", "#22c79a", "#0b5f51"],
+    preview: "linear-gradient(135deg, #f0fbef 12.5%, #8fe3b0 37.5%, #22c79a 62.5%, #0b5f51 87.5%)",
+  },
+  {
+    id: "flow-iridescent-cloud",
+    name: "幻彩云",
+    description: "蓝粉云霞",
+    colors: ["#eaf4fc", "#1e50a2", "#f09199", "#895b8a"],
+    preview: "linear-gradient(135deg, #eaf4fc 12.5%, #1e50a2 37.5%, #f09199 62.5%, #895b8a 87.5%)",
+  },
+  {
+    id: "flow-lagoon",
+    name: "泻湖",
+    description: "青蓝水色",
+    colors: ["#eafbf7", "#5ce3e6", "#0f9cc2", "#274a78"],
+    preview: "linear-gradient(135deg, #eafbf7 12.5%, #5ce3e6 37.5%, #0f9cc2 62.5%, #274a78 87.5%)",
+  },
+  {
+    id: "flow-oil-film",
+    name: "油膜",
+    description: "虹彩暗涌",
+    colors: ["#181b3a", "#007bbb", "#00a3af", "#824880", "#f8e58c"],
+    preview: "linear-gradient(135deg, #181b3a 10%, #007bbb 30%, #00a3af 50%, #824880 70%, #f8e58c 90%)",
+  },
+  {
+    id: "flow-opal",
+    name: "欧泊",
+    description: "柔和彩光",
+    colors: ["#f6f9ff", "#9be0e8", "#c4b5f7", "#f8b8d9"],
+    preview: "linear-gradient(135deg, #f6f9ff 12.5%, #9be0e8 37.5%, #c4b5f7 62.5%, #f8b8d9 87.5%)",
+  },
+  {
+    id: "flow-pearl-light",
+    name: "珍珠光",
+    description: "温润珠光",
+    colors: ["#eaf4fc", "#d6bbc6", "#a2d7dd", "#f8e58c", "#b28fce"],
+    preview: "linear-gradient(135deg, #eaf4fc 10%, #d6bbc6 30%, #a2d7dd 50%, #f8e58c 70%, #b28fce 90%)",
+  },
+  {
+    id: "flow-tropical-night",
+    name: "热带夜",
+    description: "深色霓光",
+    colors: ["#0d0d0d", "#460e44", "#824880", "#00a3af", "#68be8d"],
+    preview: "linear-gradient(135deg, #0d0d0d 10%, #460e44 30%, #824880 50%, #00a3af 70%, #68be8d 90%)",
+  },
+];
+
+const flowAnimationSpeedOptions: Array<{
+  id: FlowAnimationSpeed;
+  label: string;
+  description: string;
+  canvasSpeed: number;
+  cssDuration: number;
+}> = [
+  { id: "slow", label: "舒缓", description: "慢速流动", canvasSpeed: 16, cssDuration: 24 },
+  { id: "normal", label: "标准", description: "自然节奏", canvasSpeed: 26, cssDuration: 16 },
+  { id: "fast", label: "活跃", description: "快速变幻", canvasSpeed: 42, cssDuration: 9 },
+];
+
+const backgroundModes: BackgroundMode[] = [
+  "mist",
+  "blue",
+  "midnight",
+  "custom",
+  ...flowBackgroundPresets.map(preset => preset.id),
+];
+
 const iconBackgroundPresets = [
   { name: "冰蓝", value: "#dceeff" },
   { name: "潮汐蓝", value: "#b9d9ff" },
@@ -214,6 +308,24 @@ function readLocal<T>(key: string, fallback: T): T {
   }
 }
 
+function normalizeSingleTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const tag = value.find(item => typeof item === "string" && item.trim());
+  return typeof tag === "string" ? [tag.trim().slice(0, 24)] : [];
+}
+
+function normalizeSites(value: Site[]) {
+  return value.map(site => ({
+    ...site,
+    tags: normalizeSingleTags(site.tags),
+    iconBackground:
+      typeof site.iconBackground === "string" &&
+      /^#[0-9a-f]{6}$/i.test(site.iconBackground)
+        ? site.iconBackground.toLowerCase()
+        : "#ffffff",
+  }));
+}
+
 function normalizeViewMode(value: unknown): ViewMode {
   if (
     value === "large" ||
@@ -226,6 +338,21 @@ function normalizeViewMode(value: unknown): ViewMode {
   if (value === "dense") return "medium";
   if (value === "icon") return "small";
   return "large";
+}
+
+function normalizeFlowAnimationSpeed(value: unknown): FlowAnimationSpeed {
+  return value === "slow" || value === "fast" ? value : "normal";
+}
+
+function supportsDesktopFlowCanvas() {
+  if (typeof window === "undefined" || typeof navigator === "undefined")
+    return false;
+  return (
+    navigator.maxTouchPoints === 0 &&
+    window.matchMedia(
+      "(min-width: 1024px) and (hover: hover) and (pointer: fine)"
+    ).matches
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1012,6 +1139,9 @@ export default function Home({
   const draggingCategoryIdRef = useRef<string | null>(null);
   const lastCategoryDragTargetRef = useRef<string | null>(null);
   const settingsCloseTimerRef = useRef<number | null>(null);
+  const addCloseTimerRef = useRef<number | null>(null);
+  const editCloseTimerRef = useRef<number | null>(null);
+  const mobileNavCloseTimerRef = useRef<number | null>(null);
   const editHintExitTimerRef = useRef<number | null>(null);
   const categoryTransitionTimersRef = useRef<number[]>([]);
   const [storageMode, setStorageMode] = useState<
@@ -1022,7 +1152,7 @@ export default function Home({
   const [savingSite, setSavingSite] = useState(false);
   const [importingBookmarks, setImportingBookmarks] = useState(false);
   const [sites, setSites] = useState<Site[]>(() =>
-    readLocal("tidal-sites", initialSites)
+    normalizeSites(readLocal("tidal-sites", initialSites))
   );
   const [activeCategory, setActiveCategory] = useState<CategoryId>("all");
   const [displayedCategory, setDisplayedCategory] = useState<CategoryId>("all");
@@ -1042,22 +1172,42 @@ export default function Home({
     height: number;
   } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  const [addClosing, setAddClosing] = useState(false);
   const [newIconSettingsOpen, setNewIconSettingsOpen] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [selectedSiteIds, setSelectedSiteIds] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [bulkCategoryId, setBulkCategoryId] = useState("");
+  const [bulkTag, setBulkTag] = useState("");
   const [editHintExiting, setEditHintExiting] = useState(false);
   const [editingSite, setEditingSite] = useState<Site | null>(null);
+  const [editClosing, setEditClosing] = useState(false);
   const [editIconSettingsOpen, setEditIconSettingsOpen] = useState(false);
   const [draggingSiteId, setDraggingSiteId] = useState<string | null>(null);
   const [orderDirty, setOrderDirty] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [mobileNavClosing, setMobileNavClosing] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() =>
     readLocal("tidal-sidebar-collapsed", false)
   );
   const [skin, setSkin] = useState<"dark" | "light">(() =>
     readLocal("tidal-skin", "dark")
   );
-  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(() =>
-    readLocal("tidal-background", "mist")
+  const [backgroundMode, setBackgroundMode] = useState<BackgroundMode>(() => {
+    const stored = readLocal<string>("tidal-background", "mist");
+    return backgroundModes.includes(stored as BackgroundMode)
+      ? (stored as BackgroundMode)
+      : "mist";
+  });
+  const [backgroundAnimationSpeed, setBackgroundAnimationSpeed] =
+    useState<FlowAnimationSpeed>(() =>
+      normalizeFlowAnimationSpeed(
+        readLocal("tidal-background-animation-speed", "normal")
+      )
+    );
+  const [desktopFlowCanvas, setDesktopFlowCanvas] = useState(
+    supportsDesktopFlowCanvas
   );
   const [customBackground, setCustomBackground] = useState(() =>
     readLocal("tidal-custom-background", "#f5f5f7")
@@ -1167,7 +1317,7 @@ export default function Home({
         if (cancelled) return;
 
         if (remoteSites.length) {
-          setSites(remoteSites);
+          setSites(normalizeSites(remoteSites));
         } else {
           const localSites = readLocal<Site[]>("tidal-sites", initialSites);
           resolvedSites = isAuthenticated ? localSites : [];
@@ -1208,11 +1358,14 @@ export default function Home({
           if (typeof preferences.sidebarCollapsed === "boolean")
             setSidebarCollapsed(preferences.sidebarCollapsed);
           if (
-            ["mist", "blue", "midnight", "custom"].includes(
-              String(preferences.backgroundMode)
+            backgroundModes.includes(
+              String(preferences.backgroundMode) as BackgroundMode
             )
           )
             setBackgroundMode(preferences.backgroundMode as BackgroundMode);
+          setBackgroundAnimationSpeed(
+            normalizeFlowAnimationSpeed(preferences.backgroundAnimationSpeed)
+          );
           if (typeof preferences.customBackground === "string")
             setCustomBackground(preferences.customBackground);
           if (typeof preferences.backgroundImage === "string")
@@ -1258,6 +1411,7 @@ export default function Home({
                   siteName,
                   sidebarCollapsed,
                   backgroundMode,
+                  backgroundAnimationSpeed,
                   customBackground,
                   backgroundImage,
                   backgroundImageBlur,
@@ -1338,6 +1492,25 @@ export default function Home({
   }, [backgroundMode]);
   useEffect(() => {
     window.localStorage.setItem(
+      "tidal-background-animation-speed",
+      JSON.stringify(backgroundAnimationSpeed)
+    );
+  }, [backgroundAnimationSpeed]);
+  useEffect(() => {
+    const desktopFlowQuery = window.matchMedia(
+      "(min-width: 1024px) and (hover: hover) and (pointer: fine)"
+    );
+    const updateFlowRenderer = () =>
+      setDesktopFlowCanvas(
+        desktopFlowQuery.matches && navigator.maxTouchPoints === 0
+      );
+    updateFlowRenderer();
+    desktopFlowQuery.addEventListener("change", updateFlowRenderer);
+    return () =>
+      desktopFlowQuery.removeEventListener("change", updateFlowRenderer);
+  }, []);
+  useEffect(() => {
+    window.localStorage.setItem(
       "tidal-custom-background",
       JSON.stringify(customBackground)
     );
@@ -1389,6 +1562,7 @@ export default function Home({
                 siteName,
                 sidebarCollapsed,
                 backgroundMode,
+                backgroundAnimationSpeed,
                 customBackground,
                 backgroundImage,
                 backgroundImageBlur,
@@ -1425,6 +1599,7 @@ export default function Home({
     siteName,
     sidebarCollapsed,
     backgroundMode,
+    backgroundAnimationSpeed,
     customBackground,
     backgroundImage,
     backgroundImageBlur,
@@ -1472,11 +1647,57 @@ export default function Home({
     }, 320);
   };
 
+  const closeAddModal = () => {
+    if (!addOpen || addCloseTimerRef.current !== null) return;
+    setAddClosing(true);
+    addCloseTimerRef.current = window.setTimeout(() => {
+      setAddOpen(false);
+      setAddClosing(false);
+      setAnalysisSource(null);
+      addCloseTimerRef.current = null;
+    }, 260);
+  };
+
+  const closeEditModal = () => {
+    if (!editingSite || editCloseTimerRef.current !== null) return;
+    setEditClosing(true);
+    editCloseTimerRef.current = window.setTimeout(() => {
+      setEditingSite(null);
+      setEditClosing(false);
+      editCloseTimerRef.current = null;
+    }, 260);
+  };
+
+  const openMobileNav = () => {
+    if (mobileNavCloseTimerRef.current !== null) {
+      window.clearTimeout(mobileNavCloseTimerRef.current);
+      mobileNavCloseTimerRef.current = null;
+    }
+    setMobileNavClosing(false);
+    setMobileNavOpen(true);
+  };
+
+  const closeMobileNav = () => {
+    if (!mobileNavOpen || mobileNavCloseTimerRef.current !== null) return;
+    setMobileNavClosing(true);
+    setMobileNavOpen(false);
+    mobileNavCloseTimerRef.current = window.setTimeout(() => {
+      setMobileNavClosing(false);
+      mobileNavCloseTimerRef.current = null;
+    }, 300);
+  };
+
   useEffect(
     () => () => {
       if (settingsCloseTimerRef.current !== null) {
         window.clearTimeout(settingsCloseTimerRef.current);
       }
+      if (addCloseTimerRef.current !== null)
+        window.clearTimeout(addCloseTimerRef.current);
+      if (editCloseTimerRef.current !== null)
+        window.clearTimeout(editCloseTimerRef.current);
+      if (mobileNavCloseTimerRef.current !== null)
+        window.clearTimeout(mobileNavCloseTimerRef.current);
       if (editHintExitTimerRef.current !== null) {
         window.clearTimeout(editHintExitTimerRef.current);
       }
@@ -1530,9 +1751,9 @@ export default function Home({
           return;
         }
         if (settingsOpen) closeSettings();
-        setAddOpen(false);
-        setEditingSite(null);
-        setMobileNavOpen(false);
+        closeAddModal();
+        closeEditModal();
+        closeMobileNav();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -1541,10 +1762,20 @@ export default function Home({
 
   useEffect(() => {
     const overlayOpen =
-      mobileNavOpen || settingsOpen || addOpen || Boolean(editingSite);
+      mobileNavOpen ||
+      mobileNavClosing ||
+      settingsOpen ||
+      addOpen ||
+      Boolean(editingSite);
     document.documentElement.classList.toggle("overlay-open", overlayOpen);
     return () => document.documentElement.classList.remove("overlay-open");
-  }, [addOpen, editingSite, mobileNavOpen, settingsOpen]);
+  }, [
+    addOpen,
+    editingSite,
+    mobileNavClosing,
+    mobileNavOpen,
+    settingsOpen,
+  ]);
 
   useEffect(() => {
     if (mobileNavOpen) {
@@ -1627,6 +1858,19 @@ export default function Home({
     [categories]
   );
   const defaultContentCategoryId = contentCategories[0]?.id || "";
+  const existingTagSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    return sites
+      .flatMap(site =>
+        normalizeSingleTags(site.tags).filter(tag => {
+          const key = tag.toLocaleLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+      )
+      .slice(0, 200);
+  }, [sites]);
 
   const openAddSite = () => {
     if (!isAuthenticated) {
@@ -1674,6 +1918,41 @@ export default function Home({
       return [...next].sort((a, b) => a.name.localeCompare(b.name));
     return next;
   }, [displayedCategory, categoryNames, favorites, query, sites, sortMode]);
+  const visibleSiteIds = useMemo(
+    () => filteredSites.map(site => site.id),
+    [filteredSites]
+  );
+  const selectedVisibleCount = visibleSiteIds.filter(id =>
+    selectedSiteIds.has(id)
+  ).length;
+  const allVisibleSelected =
+    visibleSiteIds.length > 0 && selectedVisibleCount === visibleSiteIds.length;
+
+  useEffect(() => {
+    if (!editMode) {
+      setSelectedSiteIds(current => (current.size ? new Set() : current));
+      return;
+    }
+    const visible = new Set(visibleSiteIds);
+    setSelectedSiteIds(current => {
+      const next = new Set(Array.from(current).filter(id => visible.has(id)));
+      if (
+        next.size === current.size &&
+        Array.from(next).every(id => current.has(id))
+      )
+        return current;
+      return next;
+    });
+  }, [editMode, visibleSiteIds]);
+
+  useEffect(() => {
+    if (
+      bulkCategoryId &&
+      contentCategories.some(category => category.id === bulkCategoryId)
+    )
+      return;
+    setBulkCategoryId(defaultContentCategoryId);
+  }, [bulkCategoryId, contentCategories, defaultContentCategoryId]);
   const settingsPreviewSite = filteredSites[0];
 
   useLayoutEffect(() => {
@@ -1782,13 +2061,12 @@ export default function Home({
   const withSortOrder = (nextSites: Site[]) =>
     nextSites.map((site, index) => ({ ...site, sortOrder: index }));
 
-  const persistSites = async (nextSites: Site[]) => {
-    const orderedSites = withSortOrder(nextSites);
-    for (let index = 0; index < orderedSites.length; index += 50) {
+  const postSiteUpdates = async (nextSites: Site[]) => {
+    for (let index = 0; index < nextSites.length; index += 50) {
       const response = await fetch("/api/sites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sites: orderedSites.slice(index, index + 50) }),
+        body: JSON.stringify({ sites: nextSites.slice(index, index + 50) }),
       });
       const isJson =
         response.headers.get("content-type")?.includes("application/json") ===
@@ -1803,6 +2081,20 @@ export default function Home({
         throw new Error(payload.error || "云端保存失败。");
     }
     return true;
+  };
+
+  const persistSites = async (nextSites: Site[]) =>
+    postSiteUpdates(withSortOrder(nextSites));
+
+  const reloadCloudSites = async () => {
+    const response = await fetch("/api/sites");
+    if (!response.ok) throw new Error("无法重新读取云端入口。");
+    const payload = (await response.json()) as { sites?: Site[] };
+    const remoteSites = normalizeSites(
+      Array.isArray(payload.sites) ? payload.sites : []
+    );
+    setSites(remoteSites);
+    return remoteSites;
   };
 
   const exportBookmarks = () => {
@@ -1910,9 +2202,9 @@ export default function Home({
             ),
             iconUrl: bookmark.iconUrl?.trim() || faviconUrl(url),
             iconTone: "mint",
-            tags: bookmark.tags?.filter(Boolean).slice(0, 8) || [
-              category.label,
-            ],
+            tags: normalizeSingleTags(bookmark.tags).length
+              ? normalizeSingleTags(bookmark.tags)
+              : [category.label],
           });
           if (bookmark.favorite) importedFavoriteIds.push(id);
         });
@@ -1981,6 +2273,12 @@ export default function Home({
         throw new Error(payload.error || "D1 删除失败。");
       setSites(nextSites);
       setFavorites(current => current.filter(id => id !== site.id));
+      setSelectedSiteIds(current => {
+        if (!current.has(site.id)) return current;
+        const next = new Set(current);
+        next.delete(site.id);
+        return next;
+      });
       setEditingSite(current => (current?.id === site.id ? null : current));
       setStorageMode(cloudSaved ? "cloud" : "local");
       toast.success(
@@ -1990,6 +2288,144 @@ export default function Home({
       );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "删除入口失败。");
+    } finally {
+      setSavingSite(false);
+    }
+  };
+
+  const toggleSiteSelection = (siteId: string) => {
+    if (!editMode) return;
+    setSelectedSiteIds(current => {
+      const next = new Set(current);
+      if (next.has(siteId)) next.delete(siteId);
+      else next.add(siteId);
+      return next;
+    });
+  };
+
+  const toggleSelectAllVisible = () => {
+    if (!editMode || !visibleSiteIds.length) return;
+    setSelectedSiteIds(current => {
+      const next = new Set(current);
+      if (allVisibleSelected) visibleSiteIds.forEach(id => next.delete(id));
+      else visibleSiteIds.forEach(id => next.add(id));
+      return next;
+    });
+  };
+
+  const applyBulkUpdate = async (
+    transform: (site: Site) => Site,
+    successMessage: string
+  ) => {
+    if (!editMode || !selectedSiteIds.size) return;
+    const selected = new Set(selectedSiteIds);
+    const nextSites = sites.map(site =>
+      selected.has(site.id) ? transform(site) : site
+    );
+    const changedSites = nextSites.filter(site => selected.has(site.id));
+    setSavingSite(true);
+    let cloudSaved = false;
+    try {
+      try {
+        await postSiteUpdates(changedSites);
+        cloudSaved = true;
+      } catch (error) {
+        if (!import.meta.env.DEV) {
+          await reloadCloudSites().catch(() => undefined);
+          throw error;
+        }
+      }
+      setSites(nextSites);
+      setSelectedSiteIds(new Set());
+      setStorageMode(cloudSaved ? "cloud" : "local");
+      toast.success(
+        cloudSaved
+          ? `${successMessage}并同步。`
+          : `${successMessage}到当前设备。`
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "批量保存失败。");
+    } finally {
+      setSavingSite(false);
+    }
+  };
+
+  const applyBulkCategory = () => {
+    const category = contentCategories.find(item => item.id === bulkCategoryId);
+    if (!category) {
+      toast.error("请选择一个已有分类。");
+      return;
+    }
+    void applyBulkUpdate(
+      site => ({
+        ...site,
+        category: category.id,
+        categoryLabel: category.label,
+      }),
+      `已将 ${selectedSiteIds.size} 个入口移至“${category.label}”`
+    );
+  };
+
+  const applyBulkTag = () => {
+    const nextTag = bulkTag.trim().slice(0, 24);
+    const canonicalTag =
+      existingTagSuggestions.find(
+        tag => tag.toLocaleLowerCase() === nextTag.toLocaleLowerCase()
+      ) || nextTag;
+    void applyBulkUpdate(
+      site => ({ ...site, tags: canonicalTag ? [canonicalTag] : [] }),
+      canonicalTag
+        ? `已为 ${selectedSiteIds.size} 个入口设置标签“${canonicalTag}”`
+        : `已清除 ${selectedSiteIds.size} 个入口的标签`
+    );
+  };
+
+  const deleteSelectedSites = async () => {
+    const ids = Array.from(selectedSiteIds);
+    if (
+      !editMode ||
+      !ids.length ||
+      !window.confirm(`确认删除选中的 ${ids.length} 个入口？此操作无法撤销。`)
+    )
+      return;
+    setSavingSite(true);
+    let cloudSaved = false;
+    try {
+      try {
+        for (let index = 0; index < ids.length; index += 500) {
+          const response = await fetch("/api/sites", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: ids.slice(index, index + 500) }),
+          });
+          const payload = (await response.json().catch(() => ({}))) as {
+            success?: boolean;
+            error?: string;
+          };
+          if (!response.ok || payload.success !== true)
+            throw new Error(payload.error || "D1 批量删除失败。");
+        }
+        cloudSaved = true;
+      } catch (error) {
+        if (!import.meta.env.DEV) {
+          await reloadCloudSites().catch(() => undefined);
+          throw error;
+        }
+      }
+      const removed = new Set(ids);
+      setSites(current =>
+        withSortOrder(current.filter(site => !removed.has(site.id)))
+      );
+      setFavorites(current => current.filter(id => !removed.has(id)));
+      setSelectedSiteIds(new Set());
+      setStorageMode(cloudSaved ? "cloud" : "local");
+      toast.success(
+        cloudSaved
+          ? `已删除 ${ids.length} 个入口并同步。`
+          : `已从当前设备删除 ${ids.length} 个入口。`
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "批量删除失败。");
     } finally {
       setSavingSite(false);
     }
@@ -2086,14 +2522,18 @@ export default function Home({
     setQuery("");
     setSortMode("curated");
     setSettingsOpen(false);
+    setSelectedSiteIds(new Set());
+    setBulkTag("");
     setEditMode(true);
-    toast.message("编辑模式已开启：轻点入口编辑，拖动可调整顺序。");
+    toast.message("编辑模式已开启：可多选入口，轻点卡片编辑，拖动调整顺序。");
   };
 
   const finishEditMode = async () => {
     const orderedSites = withSortOrder(sites);
     setSites(orderedSites);
     setEditMode(false);
+    setSelectedSiteIds(new Set());
+    setBulkTag("");
     setEditHintExiting(true);
     editHintExitTimerRef.current = window.setTimeout(() => {
       setEditHintExiting(false);
@@ -2312,8 +2752,8 @@ export default function Home({
       iconScale: newSite.iconScale,
       iconBackground: newSite.iconBackground,
       iconTone: "mint",
-      tags: newSite.tags.length
-        ? newSite.tags
+      tags: normalizeSingleTags(newSite.tags).length
+        ? normalizeSingleTags(newSite.tags)
         : [
             categoryNames[newSite.category]?.trim() ||
               categoryLabelMap[newSite.category] ||
@@ -2382,7 +2822,16 @@ export default function Home({
       const response = await fetch("/api/analyze-site", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newSite.name, url: newSite.url }),
+        body: JSON.stringify({
+          name: newSite.name,
+          url: newSite.url,
+          categories: contentCategories.map(category => ({
+            id: category.id,
+            label: category.label,
+          })),
+          existingTags: existingTagSuggestions,
+          fallbackCategoryId: newSite.category || defaultContentCategoryId,
+        }),
       });
       const result = (await response.json()) as {
         name?: string;
@@ -2402,7 +2851,7 @@ export default function Home({
           contentCategories.some(category => category.id === result.category)
             ? result.category
             : defaultContentCategoryId,
-        tags: Array.isArray(result.tags) ? result.tags : [],
+        tags: normalizeSingleTags(result.tags),
         iconUrl: current.iconUrl,
       }));
       setAnalysisSource(result.source || "ai");
@@ -2431,6 +2880,12 @@ export default function Home({
         body: JSON.stringify({
           name: editingSite.name,
           url: editingSite.url,
+          categories: contentCategories.map(category => ({
+            id: category.id,
+            label: category.label,
+          })),
+          existingTags: existingTagSuggestions,
+          fallbackCategoryId: editingSite.category,
         }),
       });
       const result = (await response.json()) as {
@@ -2454,8 +2909,8 @@ export default function Home({
               ? result.category
               : current.category,
           tags: Array.isArray(result.tags)
-            ? result.tags.slice(0, 4)
-            : current.tags,
+            ? normalizeSingleTags(result.tags)
+            : normalizeSingleTags(current.tags),
           iconUrl: current.iconUrl || faviconUrl(current.url),
         };
       });
@@ -2525,10 +2980,7 @@ export default function Home({
         "未分类",
       icon: editingSite.name.trim().slice(0, 2),
       iconUrl: editingSite.iconUrl?.trim() || faviconUrl(parsedUrl),
-      tags: editingSite.tags
-        .map(tag => tag.trim())
-        .filter(Boolean)
-        .slice(0, 4),
+      tags: normalizeSingleTags(editingSite.tags),
     };
     setSavingSite(true);
     try {
@@ -2581,12 +3033,30 @@ export default function Home({
   const effectiveImageContrast = backgroundImageAdaptive
     ? Math.round(backgroundImageContrast * (skin === "dark" ? 1.08 : 0.94))
     : backgroundImageContrast;
+  const activeFlowBackground = flowBackgroundPresets.find(
+    preset => preset.id === backgroundMode
+  );
+  const activeFlowAnimationSpeed =
+    flowAnimationSpeedOptions.find(
+      option => option.id === backgroundAnimationSpeed
+    ) || flowAnimationSpeedOptions[1];
 
   return (
     <div
-      className={`app-shell skin-${skin} background-${backgroundMode} ${backgroundImage ? "has-background-image" : ""} ${backgroundImageAdaptive ? "background-image-adaptive" : ""} ${editMode ? "app-editing" : ""}`}
-      style={{ "--custom-background": customBackground } as CSSProperties}
+      className={`app-shell skin-${skin} background-${backgroundMode} ${activeFlowBackground && !desktopFlowCanvas && !backgroundImage ? "flow-background-css" : ""} ${backgroundImage ? "has-background-image" : ""} ${backgroundImageAdaptive ? "background-image-adaptive" : ""} ${editMode ? "app-editing" : ""}`}
+      style={
+        {
+          "--custom-background": customBackground,
+          "--flow-animation-duration": `${activeFlowAnimationSpeed.cssDuration}s`,
+        } as CSSProperties
+      }
     >
+      {activeFlowBackground && desktopFlowCanvas && !backgroundImage && (
+        <FlowBackgroundCanvas
+          colors={activeFlowBackground.colors}
+          speed={activeFlowAnimationSpeed.canvasSpeed}
+        />
+      )}
       {backgroundImage && (
         <>
           <div
@@ -2607,7 +3077,11 @@ export default function Home({
       <div className="ambient-orb orb-one" />
       <div className="ambient-orb orb-two" />
       <div className="ambient-orb orb-three" />
-      <div className="grain-overlay" />
+      <datalist id="site-tag-suggestions">
+        {existingTagSuggestions.map(tag => (
+          <option key={tag} value={tag} />
+        ))}
+      </datalist>
 
       <button
         ref={mobileNavTriggerRef}
@@ -2853,14 +3327,96 @@ export default function Home({
             {(editMode || editHintExiting) && (
               <div
                 className={`edit-mode-hint ${editHintExiting ? "edit-mode-hint-exiting" : ""}`}
-                role="status"
+                aria-label="入口批量编辑工具栏"
               >
-                <span className="edit-mode-pulse" />
-                <strong>编辑模式</strong>
-                <span>轻点卡片编辑信息；拖动调整顺序，右上角 × 可删除。</span>
-                <button onClick={finishEditMode} disabled={editHintExiting}>
-                  <Check size={14} /> 完成
-                </button>
+                <div className="edit-mode-summary">
+                  <span className="edit-mode-pulse" />
+                  <strong>编辑模式</strong>
+                  <span>
+                    已选 {selectedSiteIds.size} 个；点击卡片编辑，拖动调整顺序。
+                  </span>
+                </div>
+                <div className="edit-mode-actions">
+                  <button
+                    type="button"
+                    className="bulk-select-all"
+                    onClick={toggleSelectAllVisible}
+                    disabled={!visibleSiteIds.length || savingSite}
+                    aria-pressed={
+                      allVisibleSelected
+                        ? true
+                        : selectedVisibleCount > 0
+                          ? "mixed"
+                          : false
+                    }
+                  >
+                    <Check size={14} />
+                    {allVisibleSelected ? "取消全选" : "全选当前结果"}
+                  </button>
+                  <button
+                    type="button"
+                    className="edit-mode-finish"
+                    onClick={finishEditMode}
+                    disabled={editHintExiting || savingSite}
+                  >
+                    <Check size={14} /> 完成
+                  </button>
+                </div>
+                {selectedSiteIds.size > 0 && (
+                  <div className="bulk-edit-controls">
+                    <div className="bulk-edit-group">
+                      <label htmlFor="bulk-category">移动到分类</label>
+                      <select
+                        id="bulk-category"
+                        value={bulkCategoryId}
+                        onChange={event =>
+                          setBulkCategoryId(event.target.value)
+                        }
+                        disabled={savingSite}
+                      >
+                        {contentCategories.map(category => (
+                          <option key={category.id} value={category.id}>
+                            {category.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={applyBulkCategory}
+                        disabled={savingSite || !bulkCategoryId}
+                      >
+                        应用
+                      </button>
+                    </div>
+                    <div className="bulk-edit-group bulk-tag-group">
+                      <label htmlFor="bulk-tag">替换标签</label>
+                      <input
+                        id="bulk-tag"
+                        list="site-tag-suggestions"
+                        value={bulkTag}
+                        onChange={event => setBulkTag(event.target.value)}
+                        placeholder="留空可清除"
+                        maxLength={24}
+                        disabled={savingSite}
+                      />
+                      <button
+                        type="button"
+                        onClick={applyBulkTag}
+                        disabled={savingSite}
+                      >
+                        {bulkTag.trim() ? "应用" : "清除"}
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      className="bulk-delete-button"
+                      onClick={() => void deleteSelectedSites()}
+                      disabled={savingSite}
+                    >
+                      <Trash2 size={14} /> 删除所选
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2886,6 +3442,7 @@ export default function Home({
           >
             {filteredSites.map((site, index) => {
               const isFavorite = favorites.includes(site.id);
+              const isSelected = selectedSiteIds.has(site.id);
               return (
                 <article
                   key={site.id}
@@ -2916,7 +3473,7 @@ export default function Home({
                       moveSiteByOffset(site.id, 1);
                     }
                   }}
-                  className={`site-card glass-panel ${site.featured ? "site-card-featured" : ""} ${index === 1 ? "site-card-tall" : ""} ${editMode ? "site-card-editing" : ""} ${draggingSiteId === site.id ? "site-card-dragging" : ""}`}
+                  className={`site-card glass-panel ${site.featured ? "site-card-featured" : ""} ${index === 1 ? "site-card-tall" : ""} ${editMode ? "site-card-editing" : ""} ${isSelected ? "site-card-selected" : ""} ${draggingSiteId === site.id ? "site-card-dragging" : ""}`}
                   title={viewMode === "mini" ? site.name : undefined}
                 >
                   {!editMode && (
@@ -2927,6 +3484,22 @@ export default function Home({
                       rel="noreferrer"
                       aria-label={`打开 ${site.name}`}
                     />
+                  )}
+                  {editMode && (
+                    <button
+                      type="button"
+                      className="site-select-button"
+                      onPointerDown={event => event.stopPropagation()}
+                      onClick={event => {
+                        event.stopPropagation();
+                        toggleSiteSelection(site.id);
+                      }}
+                      aria-pressed={isSelected}
+                      aria-label={`${isSelected ? "取消选择" : "选择"} ${site.name}`}
+                      title={isSelected ? "取消选择" : "选择入口"}
+                    >
+                      {isSelected && <Check size={14} strokeWidth={2.8} />}
+                    </button>
                   )}
                   <div className="site-card-topline">
                     <SiteIcon site={site} />
@@ -2971,7 +3544,7 @@ export default function Home({
                   </div>
                   <div className="site-card-bottom">
                     <div className="tag-list">
-                      {site.tags.map(tag => (
+                      {site.tags.slice(0, 1).map(tag => (
                         <span key={tag}>{tag}</span>
                       ))}
                     </div>
@@ -3095,7 +3668,7 @@ export default function Home({
                 </div>
                 <div className="site-card-bottom">
                   <div className="tag-list">
-                    {settingsPreviewSite.tags.map(tag => (
+                    {settingsPreviewSite.tags.slice(0, 1).map(tag => (
                       <span key={tag}>{tag}</span>
                     ))}
                   </div>
@@ -3163,7 +3736,9 @@ export default function Home({
                       ? "图片"
                       : backgroundMode === "custom"
                         ? "自定义"
-                        : "预设"}
+                        : backgroundMode.startsWith("flow-")
+                          ? "动态"
+                          : "预设"}
                   </span>
                 </div>
                 <div className="background-options">
@@ -3194,7 +3769,58 @@ export default function Home({
                     <strong>午夜</strong>
                     <small>深石墨</small>
                   </button>
+                  {flowBackgroundPresets.map(preset => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`background-option background-option-flow ${backgroundMode === preset.id ? "background-option-active" : ""}`}
+                      style={
+                        { "--flow-preview": preset.preview } as CSSProperties
+                      }
+                      onClick={() => setBackgroundMode(preset.id)}
+                    >
+                      <span />
+                      <strong>{preset.name}</strong>
+                      <small>{preset.description}</small>
+                    </button>
+                  ))}
                 </div>
+                {backgroundMode.startsWith("flow-") && (
+                  <div className="flow-speed-setting">
+                    <div className="flow-speed-heading">
+                      <div>
+                        <strong>渐变动画速率</strong>
+                        <small>
+                          桌面使用流体效果，移动设备使用轻量渐变。
+                        </small>
+                      </div>
+                      <span>{activeFlowAnimationSpeed.label}</span>
+                    </div>
+                    <div
+                      className="flow-speed-options"
+                      role="radiogroup"
+                      aria-label="渐变动画速率"
+                    >
+                      {flowAnimationSpeedOptions.map(option => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={backgroundAnimationSpeed === option.id}
+                          className={
+                            backgroundAnimationSpeed === option.id
+                              ? "flow-speed-option flow-speed-option-active"
+                              : "flow-speed-option"
+                          }
+                          onClick={() => setBackgroundAnimationSpeed(option.id)}
+                        >
+                          <strong>{option.label}</strong>
+                          <small>{option.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="custom-background-row">
                   <div>
                     <strong>自定义颜色</strong>
@@ -3808,16 +4434,14 @@ export default function Home({
                   </label>
                   <label>
                     网站标签
-                    <span className="optional">用逗号分隔，最多 4 个</span>
+                    <span className="optional">只保留一个最贴切的标签</span>
                     <input
-                      value={editingSite.tags.join("，")}
+                      list="site-tag-suggestions"
+                      value={editingSite.tags[0] || ""}
                       onChange={event =>
                         setEditingSite({
                           ...editingSite,
-                          tags: event.target.value
-                            .split(/[,，]/)
-                            .map(tag => tag.trim())
-                            .slice(0, 4),
+                          tags: event.target.value ? [event.target.value] : [],
                         })
                       }
                     />
@@ -3987,7 +4611,7 @@ export default function Home({
                       <div>
                         <strong>AI 自动整理</strong>
                         <p>
-                          分析网站用途，生成一句话简介、推荐分类和 2–4 个标签。
+                          分析网站用途，复用现有分类并推荐一个最贴切的标签。
                         </p>
                       </div>
                       <button
@@ -4045,20 +4669,21 @@ export default function Home({
                       </label>
                       <label>
                         网站标签
-                        <span className="optional">用逗号分隔，可修改</span>
+                        <span className="optional">
+                          优先选择现有标签，也可修改
+                        </span>
                         <input
-                          value={newSite.tags.join("，")}
+                          list="site-tag-suggestions"
+                          value={newSite.tags[0] || ""}
                           onChange={event =>
                             setNewSite({
                               ...newSite,
                               tags: event.target.value
-                                .split(/[,，]/)
-                                .map(tag => tag.trim())
-                                .filter(Boolean)
-                                .slice(0, 4),
+                                ? [event.target.value]
+                                : [],
                             })
                           }
-                          placeholder="效率，协作"
+                          placeholder="例如：效率"
                         />
                       </label>
                       <OpenSiteIconSettingsButton
