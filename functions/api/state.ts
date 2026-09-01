@@ -42,7 +42,6 @@ const preferenceKeys = new Set([
   "viewMode",
   "sortMode",
   "showDescriptions",
-  "siteName",
   "sidebarCollapsed",
   "backgroundMode",
   "backgroundAnimationSpeed",

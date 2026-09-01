@@ -72,7 +72,7 @@ function LoginScreen({
         <p className="login-kicker">PRIVATE INDEX / ACCESS</p>
         <h1 id="login-title">欢迎回来</h1>
         <p className="login-intro">
-          访客可直接浏览；输入站点密码后可以添加、编辑和整理入口。
+          访客可直接浏览；输入站点密码后可以添加、编辑和整理书签。
         </p>
         <form onSubmit={submit}>
           <label htmlFor="login-password">站点密码</label>

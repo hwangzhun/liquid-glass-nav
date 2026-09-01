@@ -83,7 +83,6 @@ type CloudPreferences = {
   viewMode?: ViewMode;
   sortMode?: SortMode;
   showDescriptions?: boolean;
-  siteName?: string;
   sidebarCollapsed?: boolean;
   backgroundMode?: BackgroundMode;
   backgroundAnimationSpeed?: FlowAnimationSpeed;
@@ -185,7 +184,7 @@ const categoryIconOptions: { key: CategoryIconKey; label: string }[] = [
 const defaultCategoryMeta: Category[] = [
   {
     id: "all",
-    label: "全部入口",
+    label: "全部书签",
     iconKey: "grid",
     color: "mint",
     system: true,
@@ -1139,6 +1138,7 @@ export default function Home({
   const draggingCategoryIdRef = useRef<string | null>(null);
   const lastCategoryDragTargetRef = useRef<string | null>(null);
   const settingsCloseTimerRef = useRef<number | null>(null);
+  const settingsPreviewModeTimerRef = useRef<number | null>(null);
   const addCloseTimerRef = useRef<number | null>(null);
   const editCloseTimerRef = useRef<number | null>(null);
   const mobileNavCloseTimerRef = useRef<number | null>(null);
@@ -1230,14 +1230,13 @@ export default function Home({
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     normalizeViewMode(readLocal("tidal-view", "large"))
   );
+  const [settingsPreviewMode, setSettingsPreviewMode] =
+    useState<ViewMode>(viewMode);
   const [sortMode, setSortMode] = useState<SortMode>(() =>
     readLocal("tidal-sort", "curated")
   );
   const [showDescriptions, setShowDescriptions] = useState(() =>
     readLocal("tidal-descriptions", true)
-  );
-  const [siteName, setSiteName] = useState(() =>
-    readLocal("tidal-name", "我的导航")
   );
   const [categories, setCategories] =
     useState<Category[]>(getInitialCategories);
@@ -1353,8 +1352,6 @@ export default function Home({
             setSortMode(preferences.sortMode);
           if (typeof preferences.showDescriptions === "boolean")
             setShowDescriptions(preferences.showDescriptions);
-          if (typeof preferences.siteName === "string")
-            setSiteName(preferences.siteName);
           if (typeof preferences.sidebarCollapsed === "boolean")
             setSidebarCollapsed(preferences.sidebarCollapsed);
           if (
@@ -1408,7 +1405,6 @@ export default function Home({
                   viewMode,
                   sortMode,
                   showDescriptions,
-                  siteName,
                   sidebarCollapsed,
                   backgroundMode,
                   backgroundAnimationSpeed,
@@ -1475,9 +1471,6 @@ export default function Home({
       JSON.stringify(showDescriptions)
     );
   }, [showDescriptions]);
-  useEffect(() => {
-    window.localStorage.setItem("tidal-name", JSON.stringify(siteName));
-  }, [siteName]);
   useEffect(() => {
     window.localStorage.setItem(
       "tidal-sidebar-collapsed",
@@ -1559,7 +1552,6 @@ export default function Home({
                 viewMode,
                 sortMode,
                 showDescriptions,
-                siteName,
                 sidebarCollapsed,
                 backgroundMode,
                 backgroundAnimationSpeed,
@@ -1596,7 +1588,6 @@ export default function Home({
     viewMode,
     sortMode,
     showDescriptions,
-    siteName,
     sidebarCollapsed,
     backgroundMode,
     backgroundAnimationSpeed,
@@ -1633,6 +1624,7 @@ export default function Home({
       window.clearTimeout(settingsCloseTimerRef.current);
       settingsCloseTimerRef.current = null;
     }
+    setSettingsPreviewMode(viewMode);
     setSettingsClosing(false);
     setSettingsOpen(true);
   };
@@ -1691,6 +1683,9 @@ export default function Home({
     () => () => {
       if (settingsCloseTimerRef.current !== null) {
         window.clearTimeout(settingsCloseTimerRef.current);
+      }
+      if (settingsPreviewModeTimerRef.current !== null) {
+        window.clearTimeout(settingsPreviewModeTimerRef.current);
       }
       if (addCloseTimerRef.current !== null)
         window.clearTimeout(addCloseTimerRef.current);
@@ -1821,10 +1816,14 @@ export default function Home({
   }, [skin]);
   const categoryMeta = useMemo(() => {
     const allCategory = categories.find(category => category.id === "all");
-
-    return allCategory
+    const orderedCategories = allCategory
       ? [allCategory, ...categories.filter(category => category.id !== "all")]
       : categories;
+
+    // Older synced workspaces may still carry the former system label.
+    return orderedCategories.map(category =>
+      category.id === "all" ? { ...category, label: "全部书签" } : category
+    );
   }, [categories]);
 
   useLayoutEffect(() => {
@@ -1882,7 +1881,7 @@ export default function Home({
       setAddingCategory(true);
       setEditingCategoryId(null);
       setPendingDeleteCategoryId(null);
-      toast.message("请先创建一个分类，再添加入口。");
+      toast.message("请先创建一个分类，再添加书签。");
       return;
     }
     setNewSite(current =>
@@ -1954,6 +1953,38 @@ export default function Home({
     setBulkCategoryId(defaultContentCategoryId);
   }, [bulkCategoryId, contentCategories, defaultContentCategoryId]);
   const settingsPreviewSite = filteredSites[0];
+
+  useEffect(() => {
+    if (settingsPreviewModeTimerRef.current !== null) {
+      window.clearTimeout(settingsPreviewModeTimerRef.current);
+      settingsPreviewModeTimerRef.current = null;
+    }
+
+    if (!settingsOpen) {
+      setSettingsPreviewMode(viewMode);
+      return;
+    }
+    if (settingsPreviewMode === viewMode) return;
+
+    // Let the preview frame begin moving toward the newly measured grid item
+    // before its internal layout crosses the Mini boundary.
+    const crossesMiniBoundary =
+      settingsPreviewMode === "mini" || viewMode === "mini";
+    settingsPreviewModeTimerRef.current = window.setTimeout(
+      () => {
+        setSettingsPreviewMode(viewMode);
+        settingsPreviewModeTimerRef.current = null;
+      },
+      crossesMiniBoundary ? 170 : 40
+    );
+
+    return () => {
+      if (settingsPreviewModeTimerRef.current !== null) {
+        window.clearTimeout(settingsPreviewModeTimerRef.current);
+        settingsPreviewModeTimerRef.current = null;
+      }
+    };
+  }, [settingsOpen, settingsPreviewMode, viewMode]);
 
   useLayoutEffect(() => {
     if (!settingsOpen || !settingsPreviewSite) return;
@@ -2088,7 +2119,7 @@ export default function Home({
 
   const reloadCloudSites = async () => {
     const response = await fetch("/api/sites");
-    if (!response.ok) throw new Error("无法重新读取云端入口。");
+    if (!response.ok) throw new Error("无法重新读取云端书签。");
     const payload = (await response.json()) as { sites?: Site[] };
     const remoteSites = normalizeSites(
       Array.isArray(payload.sites) ? payload.sites : []
@@ -2193,7 +2224,7 @@ export default function Home({
             url,
             description:
               bookmark.description?.trim().slice(0, 240) ||
-              "从书签文件导入的入口。",
+              "从书签文件导入的书签。",
             category: category.id,
             categoryLabel: category.label,
             icon: (bookmark.icon?.trim() || name.slice(0, 2) || "书").slice(
@@ -2287,7 +2318,7 @@ export default function Home({
           : `已从当前设备删除“${site.name}”。`
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除入口失败。");
+      toast.error(error instanceof Error ? error.message : "删除书签失败。");
     } finally {
       setSavingSite(false);
     }
@@ -2362,7 +2393,7 @@ export default function Home({
         category: category.id,
         categoryLabel: category.label,
       }),
-      `已将 ${selectedSiteIds.size} 个入口移至“${category.label}”`
+      `已将 ${selectedSiteIds.size} 个书签移至“${category.label}”`
     );
   };
 
@@ -2375,8 +2406,8 @@ export default function Home({
     void applyBulkUpdate(
       site => ({ ...site, tags: canonicalTag ? [canonicalTag] : [] }),
       canonicalTag
-        ? `已为 ${selectedSiteIds.size} 个入口设置标签“${canonicalTag}”`
-        : `已清除 ${selectedSiteIds.size} 个入口的标签`
+        ? `已为 ${selectedSiteIds.size} 个书签设置标签“${canonicalTag}”`
+        : `已清除 ${selectedSiteIds.size} 个书签的标签`
     );
   };
 
@@ -2385,7 +2416,7 @@ export default function Home({
     if (
       !editMode ||
       !ids.length ||
-      !window.confirm(`确认删除选中的 ${ids.length} 个入口？此操作无法撤销。`)
+      !window.confirm(`确认删除选中的 ${ids.length} 个书签？此操作无法撤销。`)
     )
       return;
     setSavingSite(true);
@@ -2421,8 +2452,8 @@ export default function Home({
       setStorageMode(cloudSaved ? "cloud" : "local");
       toast.success(
         cloudSaved
-          ? `已删除 ${ids.length} 个入口并同步。`
-          : `已从当前设备删除 ${ids.length} 个入口。`
+          ? `已删除 ${ids.length} 个书签并同步。`
+          : `已从当前设备删除 ${ids.length} 个书签。`
       );
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "批量删除失败。");
@@ -2525,7 +2556,7 @@ export default function Home({
     setSelectedSiteIds(new Set());
     setBulkTag("");
     setEditMode(true);
-    toast.message("编辑模式已开启：可多选入口，轻点卡片编辑，拖动调整顺序。");
+    toast.message("编辑模式已开启：可多选书签，轻点卡片编辑，拖动调整顺序。");
   };
 
   const finishEditMode = async () => {
@@ -2545,10 +2576,10 @@ export default function Home({
     try {
       await persistSites(orderedSites);
       setStorageMode("cloud");
-      toast.success("入口顺序已保存。");
+      toast.success("书签顺序已保存。");
     } catch {
       setStorageMode("local");
-      toast.success("入口顺序已保存到当前设备。");
+      toast.success("书签顺序已保存到当前设备。");
     } finally {
       setOrderDirty(false);
     }
@@ -2713,7 +2744,7 @@ export default function Home({
     if (affectedCount) {
       void persistSites(nextSites).catch(() => setStorageMode("local"));
       toast.success(
-        `已删除“${category.label}”，${affectedCount} 个入口已移至“${fallback.label}”。`
+        `已删除“${category.label}”，${affectedCount} 个书签已移至“${fallback.label}”。`
       );
     } else {
       toast.success(`已删除“${category.label}”。`);
@@ -2741,7 +2772,7 @@ export default function Home({
       id: `${newSite.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`,
       name: newSite.name.trim(),
       url: parsedUrl,
-      description: newSite.description.trim() || "一个值得放在手边的入口。",
+      description: newSite.description.trim() || "一个值得放在手边的书签。",
       category: newSite.category,
       categoryLabel:
         categoryNames[newSite.category]?.trim() ||
@@ -2801,11 +2832,11 @@ export default function Home({
       setStorageMode(cloudSaved ? "cloud" : "local");
       toast.success(
         cloudSaved
-          ? "入口已保存到 Cloudflare D1。"
-          : "本地开发模式：入口已保存到浏览器缓存。"
+          ? "书签已保存到 Cloudflare D1。"
+          : "本地开发模式：书签已保存到浏览器缓存。"
       );
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存入口失败。");
+      toast.error(error instanceof Error ? error.message : "保存书签失败。");
     } finally {
       setSavingSite(false);
     }
@@ -2973,7 +3004,7 @@ export default function Home({
       ...editingSite,
       name: editingSite.name.trim(),
       url: parsedUrl,
-      description: editingSite.description.trim() || "一个值得放在手边的入口。",
+      description: editingSite.description.trim() || "一个值得放在手边的书签。",
       categoryLabel:
         categoryNames[editingSite.category]?.trim() ||
         categoryLabelMap[editingSite.category] ||
@@ -3007,11 +3038,11 @@ export default function Home({
       setEditingSite(null);
       setStorageMode(cloudSaved ? "cloud" : "local");
       toast.success(
-        cloudSaved ? "入口修改已同步。" : "入口修改已保存到当前设备。"
+        cloudSaved ? "书签修改已同步。" : "书签修改已保存到当前设备。"
       );
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "保存入口修改失败。"
+        error instanceof Error ? error.message : "保存书签修改失败。"
       );
     } finally {
       setSavingSite(false);
@@ -3020,7 +3051,7 @@ export default function Home({
 
   const activeLabel =
     categoryMeta.find(category => category.id === displayedCategory)?.label ||
-    "全部入口";
+    "全部书签";
   const today = new Date();
   const todayLabel = `${String(today.getMonth() + 1).padStart(2, "0")}/${String(today.getDate()).padStart(2, "0")} 星期${["日", "一", "二", "三", "四", "五", "六"][today.getDay()]}`;
 
@@ -3168,11 +3199,11 @@ export default function Home({
           <div className="sync-status">
             <span className="status-pulse" />{" "}
             {!isAuthenticated
-              ? `公开只读 · ${sites.length} 个入口`
+              ? `公开只读 · ${sites.length} 个书签`
               : storageMode === "cloud"
                 ? sites.length
-                  ? `D1 已同步 · ${sites.length} 个入口`
-                  : "D1 已连接 · 暂无入口"
+                  ? `D1 已同步 · ${sites.length} 个书签`
+                  : "D1 已连接 · 暂无书签"
                 : storageMode === "connecting"
                   ? "正在连接 D1"
                   : "本地缓存模式"}
@@ -3264,7 +3295,7 @@ export default function Home({
             <p>把分散的网站汇聚成一个有呼吸感的个人导航页。</p>
             <div className="hero-meta">
               <span>
-                <span className="live-dot" /> {sites.length} 个入口已就绪
+                <span className="live-dot" /> {sites.length} 个书签已就绪
               </span>
             </div>
           </div>
@@ -3315,7 +3346,7 @@ export default function Home({
             </div>
             {isAuthenticated && (
               <button className="add-inline-button" onClick={openAddSite}>
-                <Plus size={15} /> 添加入口
+                <Plus size={15} /> 添加书签
               </button>
             )}
           </section>
@@ -3327,7 +3358,7 @@ export default function Home({
             {(editMode || editHintExiting) && (
               <div
                 className={`edit-mode-hint ${editHintExiting ? "edit-mode-hint-exiting" : ""}`}
-                aria-label="入口批量编辑工具栏"
+                aria-label="书签批量编辑工具栏"
               >
                 <div className="edit-mode-summary">
                   <span className="edit-mode-pulse" />
@@ -3496,7 +3527,7 @@ export default function Home({
                       }}
                       aria-pressed={isSelected}
                       aria-label={`${isSelected ? "取消选择" : "选择"} ${site.name}`}
-                      title={isSelected ? "取消选择" : "选择入口"}
+                      title={isSelected ? "取消选择" : "选择书签"}
                     >
                       {isSelected && <Check size={14} strokeWidth={2.8} />}
                     </button>
@@ -3512,7 +3543,7 @@ export default function Home({
                             onClick={() => void deleteSite(site)}
                             disabled={savingSite}
                             aria-label={`删除 ${site.name}`}
-                            title="删除入口"
+                            title="删除书签"
                           >
                             <X size={13} strokeWidth={2.6} />
                           </button>
@@ -3566,10 +3597,10 @@ export default function Home({
                   <p className="section-kicker">NO SIGNAL / 00</p>
                   <h3>
                     {activeCategory === "favorites" && !query
-                      ? "还没有收藏任何入口"
+                      ? "还没有收藏任何书签"
                       : !sites.length && !query
-                        ? "还没有添加任何入口"
-                        : "还没有找到这个入口"}
+                        ? "还没有添加任何书签"
+                        : "还没有找到这个书签"}
                   </h3>
                   <p>
                     {activeCategory === "favorites" && !query
@@ -3584,7 +3615,7 @@ export default function Home({
                     className="primary-button"
                     onClick={() => selectCategory("all")}
                   >
-                    <Grid2X2 size={15} /> 浏览全部入口
+                    <Grid2X2 size={15} /> 浏览全部书签
                   </button>
                 ) : isAuthenticated ? (
                   <button className="primary-button" onClick={openAddSite}>
@@ -3613,7 +3644,7 @@ export default function Home({
             </section>
             <footer className="main-footer">
               <span>tidal，你的书签收藏夹。</span>
-              <span>V{packageJson.version}</span>
+              <span>V{packageJson.version.replace(/^v/i, "")}</span>
             </footer>
           </div>
         </div>
@@ -3621,7 +3652,7 @@ export default function Home({
 
       {settingsOpen && isAuthenticated && (
         <div
-          className={`drawer-layer ${settingsClosing ? "drawer-layer-closing" : ""}`}
+          className={`drawer-layer settings-drawer-layer ${settingsClosing ? "drawer-layer-closing" : ""}`}
           role="dialog"
           aria-modal="true"
           aria-label="导航设置"
@@ -3633,7 +3664,7 @@ export default function Home({
           />
           {settingsPreviewSite && settingsPreviewRect && (
             <div
-              className={`settings-site-preview-frame grid-${viewMode}`}
+              className={`settings-site-preview-frame grid-${settingsPreviewMode}`}
               style={{
                 left: settingsPreviewRect.left,
                 top: settingsPreviewRect.top,
@@ -3695,17 +3726,6 @@ export default function Home({
               </button>
             </div>
             <div className="drawer-content">
-              <section className="setting-section">
-                <label className="setting-label">工作台名称</label>
-                <input
-                  className="setting-input"
-                  value={siteName}
-                  onChange={event => setSiteName(event.target.value)}
-                />
-                <p className="setting-hint">
-                  将同步到使用同一站点密码登录的设备。
-                </p>
-              </section>
               <section className="setting-section">
                 <label className="setting-label">界面外观</label>
                 <div className="segmented-control">
@@ -4021,7 +4041,7 @@ export default function Home({
                           <div className="category-setting-copy">
                             <strong>{category.label}</strong>
                             <span>
-                              {category.system ? "固定分类" : `${count} 个入口`}
+                              {category.system ? "固定分类" : `${count} 个书签`}
                             </span>
                           </div>
                           <div className="category-setting-actions">
@@ -4106,7 +4126,7 @@ export default function Home({
                                   <div className="category-delete-confirm">
                                     <span>
                                       {count
-                                        ? `${count} 个入口将移至其他分类。`
+                                        ? `${count} 个书签将移至其他分类。`
                                         : "确认删除这个分类？"}
                                     </span>
                                     <button
@@ -4181,11 +4201,11 @@ export default function Home({
                 </div>
               </section>
               <section className="setting-section">
-                <label className="setting-label">入口模块大小</label>
+                <label className="setting-label">书签模块大小</label>
                 <div
                   className={`segmented-control size-segmented-control size-segmented-${viewMode}`}
                   role="group"
-                  aria-label="入口模块大小"
+                  aria-label="书签模块大小"
                 >
                   <button
                     type="button"
@@ -4233,7 +4253,7 @@ export default function Home({
                 </p>
               </section>
               <section className="setting-section">
-                <label className="setting-label">入口排序</label>
+                <label className="setting-label">书签排序</label>
                 <div className="select-wrap">
                   <select
                     value={sortMode}
@@ -4320,13 +4340,13 @@ export default function Home({
                     className="site-icon-settings-back"
                     onClick={() => setEditIconSettingsOpen(false)}
                   >
-                    <ChevronLeft size={15} /> 编辑入口
+                    <ChevronLeft size={15} /> 编辑书签
                   </button>
                 )}
                 <p className="section-kicker">
                   {editIconSettingsOpen ? "ICON SETTINGS" : "EDIT ENTRY / 05"}
                 </p>
-                <h2>{editIconSettingsOpen ? "设置网站图标" : "编辑入口"}</h2>
+                <h2>{editIconSettingsOpen ? "设置网站图标" : "编辑书签"}</h2>
                 <p className="ai-modal-intro">
                   {editIconSettingsOpen
                     ? "选择网站自动发现的图标，或上传自己的图片。"
@@ -4455,7 +4475,7 @@ export default function Home({
             <div className="modal-footer">
               {editIconSettingsOpen ? (
                 <>
-                  <span>设置会随入口表单一起保存</span>
+                  <span>设置会随书签表单一起保存</span>
                   <button
                     type="button"
                     className="primary-button"
@@ -4538,7 +4558,7 @@ export default function Home({
                     ? "设置网站图标"
                     : analysisSource
                       ? "确认网站信息"
-                      : "AI 添加入口"}
+                      : "AI 添加书签"}
                 </h2>
                 <p className="ai-modal-intro">
                   {newIconSettingsOpen
@@ -4697,7 +4717,7 @@ export default function Home({
             <div className="modal-footer">
               {newIconSettingsOpen ? (
                 <>
-                  <span>设置会随入口表单一起保存</span>
+                  <span>设置会随书签表单一起保存</span>
                   <button
                     type="button"
                     className="primary-button"
