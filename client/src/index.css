@@ -8108,3 +8108,40 @@ html[data-app-skin="light"] .site-icon-settings-panel {
     --liquid-surface-hover: rgba(255, 255, 255, 0.98);
   }
 }
+
+/* Production CSS minification can coalesce a standard declaration followed by
+   its WebKit-prefixed twin into the latter. Chromium only exposes the standard
+   property, so repeat it on its own in a feature-gated final layer. */
+@supports (backdrop-filter: blur(1px)) {
+  .app-shell .glass-panel,
+  .app-shell .search-panel,
+  .app-shell .site-grid .site-card,
+  .app-shell .bottom-strip,
+  .app-shell .empty-state {
+    backdrop-filter: blur(28px) saturate(165%);
+  }
+
+  .app-shell .sidebar {
+    backdrop-filter: blur(30px) saturate(155%);
+  }
+
+  .app-shell .settings-drawer,
+  .app-shell .add-modal,
+  .app-shell .edit-site-modal {
+    backdrop-filter: blur(32px) saturate(155%);
+  }
+
+  @media (max-width: 780px) {
+    .app-shell .glass-panel,
+    .app-shell .search-panel,
+    .app-shell .site-grid .site-card,
+    .app-shell .bottom-strip,
+    .app-shell .empty-state,
+    .app-shell .sidebar,
+    .app-shell .settings-drawer,
+    .app-shell .add-modal,
+    .app-shell .edit-site-modal {
+      backdrop-filter: blur(20px) saturate(155%);
+    }
+  }
+}
