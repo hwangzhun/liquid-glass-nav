@@ -7355,6 +7355,21 @@ html[data-app-skin="light"] .site-icon-settings-panel {
 }
 
 @media (min-width: 781px) {
+  /* Keep the settings drawer as a floating glass surface on desktop. The
+     header and footer have their own backgrounds, so clipping is required for
+     the panel's rounded corners to remain visible. */
+  .drawer-layer {
+    padding: 18px;
+  }
+
+  .settings-drawer {
+    height: calc(100dvh - 36px);
+    max-height: calc(100dvh - 36px);
+    border: 1px solid var(--line-bright);
+    border-radius: var(--radius-card-apple);
+    overflow: hidden;
+  }
+
   .search-panel {
     backdrop-filter: blur(28px) saturate(155%);
     -webkit-backdrop-filter: blur(28px) saturate(155%);
