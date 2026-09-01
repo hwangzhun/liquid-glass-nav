@@ -8333,3 +8333,434 @@ html[data-app-skin="light"] .site-icon-settings-panel {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* --------------------------------------------------------------------------
+   Mobile iOS foundation
+   This is the authoritative mobile layout layer. Keep device-specific layout
+   decisions here so desktop rules and older responsive iterations do not
+   compete in the cascade. */
+:root {
+  --app-viewport-height: 100dvh;
+  --mobile-gutter: max(16px, env(safe-area-inset-left));
+  --mobile-gutter-right: max(16px, env(safe-area-inset-right));
+  --mobile-bottom-safe: max(16px, env(safe-area-inset-bottom));
+}
+
+@media (max-width: 780px) {
+  html,
+  body,
+  #root {
+    min-height: var(--app-viewport-height);
+  }
+
+  .app-shell {
+    min-height: var(--app-viewport-height);
+    overflow-x: clip;
+  }
+
+  .main-content {
+    min-height: var(--app-viewport-height);
+    padding-right: var(--mobile-gutter-right);
+    padding-bottom: calc(28px + var(--mobile-bottom-safe));
+    padding-left: var(--mobile-gutter);
+  }
+
+  .topbar {
+    min-height: calc(64px + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+    padding-left: 82px;
+  }
+
+  .mobile-nav-trigger,
+  .topbar-button,
+  .profile-chip,
+  .mobile-close,
+  .drawer-close,
+  .favorite-button,
+  .site-edit-button,
+  .site-delete-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .mobile-nav-trigger {
+    top: calc(10px + env(safe-area-inset-top));
+    left: var(--mobile-gutter);
+  }
+
+  .app-shell .sidebar {
+    inset: 8px auto auto 0;
+    width: min(320px, calc(100vw - 16px - env(safe-area-inset-right)));
+    height: calc(var(--app-viewport-height) - 16px);
+    max-height: calc(var(--app-viewport-height) - 16px);
+    margin-left: max(8px, env(safe-area-inset-left));
+    padding: calc(22px + env(safe-area-inset-top)) 18px var(--mobile-bottom-safe);
+    overscroll-behavior: contain;
+  }
+
+  .category-nav,
+  .settings-drawer .drawer-content,
+  .add-modal .form-fields {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .mobile-category-scroll {
+    margin-inline: calc(-1 * var(--mobile-gutter));
+    padding-inline: var(--mobile-gutter);
+    scroll-padding-inline: var(--mobile-gutter);
+  }
+
+  /* Large remains a readable single-column card; the denser views retain two
+     columns. This prevents controls and metadata from collapsing on phones. */
+  .site-grid.grid-large {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .site-grid.grid-medium,
+  .site-grid.grid-small {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .site-grid.grid-mini {
+    grid-template-columns: repeat(auto-fit, 64px);
+    justify-content: space-between;
+  }
+
+  .grid-large .site-card {
+    min-height: 156px;
+  }
+
+  .grid-medium .site-card {
+    min-height: 146px;
+  }
+
+  .grid-small .site-card {
+    min-height: 124px;
+  }
+
+  .drawer-layer,
+  .modal-layer {
+    height: var(--app-viewport-height);
+    min-height: 0;
+  }
+
+  /* Settings and forms use one predictable bottom-sheet pattern. The sheet
+     never reaches the notch, and its own content—not the page—scrolls. */
+  .drawer-layer {
+    align-items: flex-end;
+  }
+
+  .settings-drawer,
+  .add-modal,
+  .edit-site-modal {
+    width: 100%;
+    max-height: min(
+      calc(var(--app-viewport-height) - max(12px, env(safe-area-inset-top))),
+      760px
+    );
+    border-radius: 28px 28px 0 0;
+  }
+
+  .settings-drawer {
+    height: min(
+      calc(var(--app-viewport-height) - max(12px, env(safe-area-inset-top))),
+      760px
+    );
+    animation: mobile-sheet-in 280ms var(--ease-out) both;
+  }
+
+  .drawer-layer-closing .settings-drawer {
+    animation: mobile-sheet-out 220ms ease-in both;
+  }
+
+  .settings-drawer .drawer-header,
+  .add-modal .drawer-header {
+    padding-right: var(--mobile-gutter-right);
+    padding-left: var(--mobile-gutter);
+  }
+
+  .settings-drawer .drawer-header {
+    padding-top: 20px;
+  }
+
+  .settings-drawer .drawer-content {
+    min-height: 0;
+    padding-right: var(--mobile-gutter-right);
+    padding-left: var(--mobile-gutter);
+  }
+
+  .settings-drawer .drawer-footer,
+  .add-modal .modal-footer {
+    padding-right: var(--mobile-gutter-right);
+    padding-bottom: calc(14px + var(--mobile-bottom-safe));
+    padding-left: var(--mobile-gutter);
+  }
+
+  .add-modal,
+  .edit-site-modal {
+    max-height: calc(
+      var(--app-viewport-height) - max(12px, env(safe-area-inset-top))
+    );
+  }
+
+  .add-modal .form-fields {
+    padding-right: var(--mobile-gutter-right);
+    padding-left: var(--mobile-gutter);
+  }
+
+  .settings-site-preview-frame {
+    display: none;
+  }
+
+  /* Composited blur across a scrolling grid is expensive on iOS. Reserve it
+     for the active surface and keep background content inexpensive. */
+  .app-shell .site-grid .site-card,
+  .app-shell .bottom-strip,
+  .app-shell .empty-state {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .app-shell .sidebar,
+  .app-shell .settings-drawer,
+  .app-shell .add-modal,
+  .app-shell .edit-site-modal {
+    backdrop-filter: blur(18px) saturate(150%);
+    -webkit-backdrop-filter: blur(18px) saturate(150%);
+  }
+}
+
+@media (max-width: 780px) and (orientation: landscape) and (max-height: 600px) {
+  .topbar {
+    min-height: calc(54px + env(safe-area-inset-top));
+  }
+
+  .hero-section {
+    margin-top: 12px;
+    padding-bottom: 18px;
+  }
+
+  .settings-drawer {
+    width: min(520px, calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right)));
+    margin-inline: auto;
+  }
+}
+
+@keyframes mobile-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mobile-sheet-out {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-drawer,
+  .add-modal,
+  .edit-site-modal,
+  .app-shell .sidebar,
+  .site-grid .site-card {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Human-approved tag vocabulary in the settings drawer. */
+.tag-catalog-add,
+.tag-catalog-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-catalog-add {
+  margin-top: 14px;
+}
+
+.tag-catalog-add input,
+.tag-catalog-search,
+.tag-catalog-item input {
+  min-width: 0;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0 11px;
+}
+
+.tag-catalog-add input {
+  flex: 1;
+}
+
+.tag-catalog-search {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.tag-catalog-list {
+  display: grid;
+  gap: 6px;
+  max-height: 256px;
+  margin-top: 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.tag-catalog-item {
+  min-height: 42px;
+  justify-content: space-between;
+  padding: 5px 7px 5px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.tag-catalog-item > span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-catalog-item input {
+  width: 100%;
+}
+
+.tag-catalog-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.tag-catalog-actions button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--text-soft);
+  background: transparent;
+}
+
+.tag-catalog-actions button:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.tag-catalog-empty {
+  margin: 4px 0;
+  color: var(--text-faint);
+  font-size: var(--type-label);
+  line-height: 1.5;
+}
+
+@media (max-width: 780px) {
+  .tag-catalog-add input,
+  .tag-catalog-search,
+  .tag-catalog-item input {
+    font-size: 16px;
+  }
+
+  .tag-catalog-add .category-add-button {
+    min-height: 44px;
+  }
+
+  .tag-catalog-item {
+    min-height: 44px;
+  }
+
+  .tag-catalog-actions button {
+    width: 40px;
+    height: 40px;
+  }
+}
+
+.import-analysis-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.import-analysis-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(3, 7, 12, 0.46);
+  backdrop-filter: blur(20px) saturate(80%);
+  -webkit-backdrop-filter: blur(20px) saturate(80%);
+}
+
+.import-analysis-dialog {
+  position: relative;
+  width: min(420px, 100%);
+  padding: 28px;
+  border: 1px solid var(--liquid-border, var(--line));
+  border-radius: 24px;
+  color: var(--text);
+  background: var(--liquid-surface, var(--glass-strong));
+  box-shadow: var(--liquid-shadow, 0 24px 70px rgba(0, 0, 0, 0.3));
+  text-align: center;
+  backdrop-filter: blur(28px) saturate(155%);
+  -webkit-backdrop-filter: blur(28px) saturate(155%);
+}
+
+.import-analysis-dialog > svg {
+  margin-bottom: 10px;
+  color: var(--mint);
+}
+
+.import-analysis-dialog .section-kicker {
+  margin: 0 0 7px;
+}
+
+.import-analysis-dialog h2 {
+  margin: 0;
+  font-size: var(--type-title-small);
+}
+
+.import-analysis-dialog > p:not(.section-kicker) {
+  margin: 9px 0 18px;
+  color: var(--text-soft);
+  font-size: var(--type-body-small);
+}
+
+.import-analysis-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.import-analysis-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--mint);
+  transition: width 260ms var(--ease-out);
+}
+
+.import-analysis-dialog small {
+  display: block;
+  margin-top: 14px;
+  color: var(--text-faint);
+  font-size: var(--type-label);
+  line-height: 1.5;
+}

@@ -51,6 +51,11 @@ import { flushSync } from "react-dom";
 import packageJson from "../../../package.json";
 import { toast } from "sonner";
 import { FlowBackgroundCanvas } from "../components/FlowBackgroundCanvas";
+import {
+  clearImportJob,
+  readImportJob,
+  writeImportJob,
+} from "../lib/importJobStore";
 
 type CategoryId = string;
 type SortMode = "curated" | "az";
@@ -97,6 +102,7 @@ type CloudPreferences = {
 type CloudState = {
   categories: Category[];
   favorites: string[];
+  tagCatalog?: string[];
   preferences: CloudPreferences;
 };
 
@@ -134,8 +140,11 @@ type ImportedBookmark = {
   name: string;
   url: string;
   description?: string;
+  categoryId?: string;
   iconUrl?: string;
   icon?: string;
+  iconScale?: number;
+  iconBackground?: string;
   tags?: string[];
   favorite?: boolean;
 };
@@ -147,11 +156,26 @@ type ImportedBookmarkGroup = {
 
 type BookmarkExport = {
   format: "liquid-glass-nav";
-  version: 1;
+  version: 2;
   exportedAt: string;
   categories: Category[];
   sites: Site[];
   favorites: string[];
+  tagCatalog: string[];
+};
+
+type ImportAnalysisJob = {
+  version: 1;
+  phase: "analyzing" | "normalizing" | "saving";
+  coldStart: boolean;
+  sites: Site[];
+  categories: Category[];
+  favoriteIds: string[];
+  importedTagCatalog: string[];
+  pendingIds: string[];
+  completed: number;
+  currentName?: string;
+  failures: Array<{ id: string; message: string }>;
 };
 
 const initialSites: Site[] = [];
@@ -311,6 +335,24 @@ function normalizeSingleTags(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const tag = value.find(item => typeof item === "string" && item.trim());
   return typeof tag === "string" ? [tag.trim().slice(0, 24)] : [];
+}
+
+function normalizeTagCatalog(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value
+    .flatMap(item => (typeof item === "string" ? [item.trim().slice(0, 24)] : []))
+    .filter(tag => {
+      const key = tag.toLocaleLowerCase();
+      if (!tag || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 500);
+}
+
+function tagsFromSites(sites: Site[]): string[] {
+  return normalizeTagCatalog(sites.flatMap(site => normalizeSingleTags(site.tags)));
 }
 
 function normalizeSites(value: Site[]) {
@@ -475,10 +517,17 @@ function parseBookmarkFile(text: string): ImportedBookmarkGroup[] {
       bookmarks.push({
         name: value.name,
         url: value.url,
+        categoryId,
         description:
           typeof value.description === "string" ? value.description : undefined,
         iconUrl: typeof value.iconUrl === "string" ? value.iconUrl : undefined,
         icon: typeof value.icon === "string" ? value.icon : undefined,
+        iconScale:
+          typeof value.iconScale === "number" ? value.iconScale : undefined,
+        iconBackground:
+          typeof value.iconBackground === "string"
+            ? value.iconBackground
+            : undefined,
         tags: Array.isArray(value.tags)
           ? value.tags.filter((tag): tag is string => typeof tag === "string")
           : undefined,
@@ -504,8 +553,13 @@ function parseBookmarkFile(text: string): ImportedBookmarkGroup[] {
       group.bookmarks.push({
         name,
         url: value.url,
+        description:
+          typeof value.description === "string" ? value.description : undefined,
         iconUrl: typeof value.bgImage === "string" ? value.bgImage : undefined,
         icon: typeof value.bgText === "string" ? value.bgText : undefined,
+        tags: Array.isArray(value.tags)
+          ? value.tags.filter((tag): tag is string => typeof tag === "string")
+          : undefined,
       });
       return;
     }
@@ -521,6 +575,17 @@ function parseBookmarkFile(text: string): ImportedBookmarkGroup[] {
   };
   visit(parsed);
   return groups;
+}
+
+function parseExportTagCatalog(text: string): string[] {
+  try {
+    const parsed = JSON.parse(text.replace(/^\uFEFF/, "")) as Record<string, unknown>;
+    return isRecord(parsed) && parsed.format === "liquid-glass-nav"
+      ? normalizeTagCatalog(parsed.tagCatalog)
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 function getInitialCategories(): Category[] {
@@ -1127,6 +1192,9 @@ export default function Home({
   const mobileNavTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileNavCloseRef = useRef<HTMLButtonElement>(null);
   const mobileNavWasOpenRef = useRef(false);
+  const settingsTriggerRef = useRef<HTMLButtonElement>(null);
+  const settingsCloseRef = useRef<HTMLButtonElement>(null);
+  const settingsWasOpenRef = useRef(false);
   const bookmarkImportRef = useRef<HTMLInputElement>(null);
   const categoryNavRef = useRef<HTMLElement>(null);
   const draggingSiteIdRef = useRef<string | null>(null);
@@ -1144,6 +1212,7 @@ export default function Home({
   const mobileNavCloseTimerRef = useRef<number | null>(null);
   const editHintExitTimerRef = useRef<number | null>(null);
   const categoryTransitionTimersRef = useRef<number[]>([]);
+  const importJobRunningRef = useRef(false);
   const [storageMode, setStorageMode] = useState<
     "connecting" | "cloud" | "local"
   >("connecting");
@@ -1151,9 +1220,20 @@ export default function Home({
   const [lastSyncedLabel, setLastSyncedLabel] = useState("");
   const [savingSite, setSavingSite] = useState(false);
   const [importingBookmarks, setImportingBookmarks] = useState(false);
+  const [importAnalysisJob, setImportAnalysisJob] =
+    useState<ImportAnalysisJob | null>(null);
   const [sites, setSites] = useState<Site[]>(() =>
     normalizeSites(readLocal("tidal-sites", initialSites))
   );
+  const [tagCatalog, setTagCatalog] = useState<string[]>(() =>
+    normalizeTagCatalog(readLocal("tidal-tag-catalog", []))
+  );
+  const [tagCatalogSearch, setTagCatalogSearch] = useState("");
+  const [newCatalogTag, setNewCatalogTag] = useState("");
+  const [editingCatalogTag, setEditingCatalogTag] = useState<string | null>(
+    null
+  );
+  const [editingCatalogTagName, setEditingCatalogTagName] = useState("");
   const [activeCategory, setActiveCategory] = useState<CategoryId>("all");
   const [displayedCategory, setDisplayedCategory] = useState<CategoryId>("all");
   const [categoryTransitionPhase, setCategoryTransitionPhase] = useState<
@@ -1340,6 +1420,14 @@ export default function Home({
             setCategories(remoteState.categories);
           if (Array.isArray(remoteState.favorites))
             setFavorites(remoteState.favorites);
+          setTagCatalog(
+            Array.isArray(remoteState.tagCatalog)
+              ? normalizeTagCatalog(remoteState.tagCatalog)
+              : normalizeTagCatalog([
+                  ...tagCatalog,
+                  ...tagsFromSites(resolvedSites),
+                ])
+          );
           const preferences = remoteState.preferences || {};
           if (preferences.skin === "dark" || preferences.skin === "light")
             setSkin(preferences.skin);
@@ -1400,6 +1488,10 @@ export default function Home({
               body: JSON.stringify({
                 categories: seedCategories,
                 favorites,
+                tagCatalog: normalizeTagCatalog([
+                  ...tagCatalog,
+                  ...tagsFromSites(resolvedSites),
+                ]),
                 preferences: {
                   skin,
                   viewMode,
@@ -1447,6 +1539,12 @@ export default function Home({
   useEffect(() => {
     window.localStorage.setItem("tidal-favorites", JSON.stringify(favorites));
   }, [favorites]);
+  useEffect(() => {
+    window.localStorage.setItem(
+      "tidal-tag-catalog",
+      JSON.stringify(tagCatalog)
+    );
+  }, [tagCatalog]);
   useEffect(() => {
     const siteIds = new Set(sites.map(site => site.id));
     setFavorites(current => {
@@ -1547,6 +1645,7 @@ export default function Home({
             body: JSON.stringify({
               categories,
               favorites,
+              tagCatalog,
               preferences: {
                 skin,
                 viewMode,
@@ -1584,6 +1683,7 @@ export default function Home({
     isAuthenticated,
     categories,
     favorites,
+    tagCatalog,
     skin,
     viewMode,
     sortMode,
@@ -1785,6 +1885,18 @@ export default function Home({
   }, [mobileNavOpen]);
 
   useEffect(() => {
+    if (settingsOpen) {
+      const animationFrame = window.requestAnimationFrame(() =>
+        settingsCloseRef.current?.focus()
+      );
+      settingsWasOpenRef.current = true;
+      return () => window.cancelAnimationFrame(animationFrame);
+    }
+    if (settingsWasOpenRef.current) settingsTriggerRef.current?.focus();
+    settingsWasOpenRef.current = false;
+  }, [settingsOpen]);
+
+  useEffect(() => {
     const desktopQuery = window.matchMedia("(min-width: 781px)");
     const closeMobileNavOnDesktop = () => {
       if (desktopQuery.matches) setMobileNavOpen(false);
@@ -1814,6 +1926,39 @@ export default function Home({
       skin === "dark" ? "black-translucent" : "default"
     );
   }, [skin]);
+
+  // Safari's layout viewport does not always follow the visible viewport while
+  // the address bar or software keyboard is moving. Keep overlays sized to the
+  // portion of the screen the user can actually interact with.
+  useEffect(() => {
+    const documentRoot = document.documentElement;
+    const viewport = window.visualViewport;
+
+    const updateViewportVariables = () => {
+      const height = viewport?.height ?? window.innerHeight;
+      documentRoot.style.setProperty(
+        "--app-viewport-height",
+        `${Math.round(height)}px`
+      );
+      documentRoot.style.setProperty(
+        "--visual-viewport-height",
+        `${Math.round(height)}px`
+      );
+    };
+
+    updateViewportVariables();
+    viewport?.addEventListener("resize", updateViewportVariables);
+    viewport?.addEventListener("scroll", updateViewportVariables);
+    window.addEventListener("resize", updateViewportVariables);
+
+    return () => {
+      viewport?.removeEventListener("resize", updateViewportVariables);
+      viewport?.removeEventListener("scroll", updateViewportVariables);
+      window.removeEventListener("resize", updateViewportVariables);
+      documentRoot.style.removeProperty("--app-viewport-height");
+      documentRoot.style.removeProperty("--visual-viewport-height");
+    };
+  }, []);
   const categoryMeta = useMemo(() => {
     const allCategory = categories.find(category => category.id === "all");
     const orderedCategories = allCategory
@@ -1857,19 +2002,18 @@ export default function Home({
     [categories]
   );
   const defaultContentCategoryId = contentCategories[0]?.id || "";
-  const existingTagSuggestions = useMemo(() => {
-    const seen = new Set<string>();
-    return sites
-      .flatMap(site =>
-        normalizeSingleTags(site.tags).filter(tag => {
-          const key = tag.toLocaleLowerCase();
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        })
-      )
-      .slice(0, 200);
-  }, [sites]);
+  const approvedTagSuggestions = tagCatalog;
+  const filteredTagCatalog = useMemo(() => {
+    const query = tagCatalogSearch.trim().toLocaleLowerCase();
+    return query
+      ? tagCatalog.filter(tag => tag.toLocaleLowerCase().includes(query))
+      : tagCatalog;
+  }, [tagCatalog, tagCatalogSearch]);
+  const isApprovedTag = (value?: string) =>
+    Boolean(
+      value &&
+        tagCatalog.some(tag => tag.toLocaleLowerCase() === value.toLocaleLowerCase())
+    );
 
   const openAddSite = () => {
     if (!isAuthenticated) {
@@ -2131,11 +2275,12 @@ export default function Home({
   const exportBookmarks = () => {
     const payload: BookmarkExport = {
       format: "liquid-glass-nav",
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       categories,
       sites: withSortOrder(sites),
       favorites,
+      tagCatalog,
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json;charset=utf-8",
@@ -2149,6 +2294,168 @@ export default function Home({
     toast.success(`已导出 ${sites.length} 个书签。`);
   };
 
+  const runImportAnalysis = async (initialJob: ImportAnalysisJob) => {
+    if (importJobRunningRef.current) return;
+    importJobRunningRef.current = true;
+    let job = initialJob;
+    setImportAnalysisJob(job);
+    setImportingBookmarks(true);
+    const wait = (milliseconds: number) =>
+      new Promise(resolve => window.setTimeout(resolve, milliseconds));
+
+    try {
+      for (const siteId of job.pendingIds) {
+        const site = job.sites.find(candidate => candidate.id === siteId);
+        if (!site) continue;
+        job = { ...job, currentName: site.name };
+        setImportAnalysisJob(job);
+        await writeImportJob(job);
+        let result:
+          | { name?: string; description?: string; tags?: string[] }
+          | undefined;
+        let errorMessage = "";
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+          try {
+            const response = await fetch("/api/analyze-site", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                name: site.name,
+                url: site.url,
+                categories: job.categories
+                  .filter(category => !category.system)
+                  .map(category => ({ id: category.id, label: category.label })),
+                approvedTags: job.coldStart ? [] : tagCatalog,
+                fallbackCategoryId: site.category,
+              }),
+            });
+            const payload = (await response.json()) as typeof result & {
+              error?: string;
+            };
+            if (!response.ok) throw new Error(payload.error || "分析失败。");
+            result = payload;
+            break;
+          } catch (error) {
+            errorMessage = error instanceof Error ? error.message : "分析失败。";
+            if (attempt < 2) await wait(600 * 2 ** attempt);
+          }
+        }
+        if (result) {
+          job = {
+            ...job,
+            sites: job.sites.map(candidate =>
+              candidate.id === siteId
+                ? {
+                    ...candidate,
+                    name: result?.name?.trim() || candidate.name,
+                    description:
+                      result?.description?.trim() || candidate.description,
+                    tags: normalizeSingleTags(result?.tags).length
+                      ? normalizeSingleTags(result?.tags)
+                      : candidate.tags,
+                  }
+                : candidate
+            ),
+          };
+        } else {
+          job = {
+            ...job,
+            failures: [...job.failures, { id: siteId, message: errorMessage }],
+          };
+        }
+        job = {
+          ...job,
+          pendingIds: job.pendingIds.filter(id => id !== siteId),
+          completed: job.completed + 1,
+          currentName: site.name,
+        };
+        await writeImportJob(job);
+        setImportAnalysisJob(job);
+        await wait(250);
+      }
+
+      if (job.coldStart && job.completed > 0) {
+        job = { ...job, phase: "normalizing" };
+        setImportAnalysisJob(job);
+        await writeImportJob(job);
+        try {
+          const mappings: Record<string, string> = {};
+          const candidates = job.sites.map(site => ({
+            tag: site.tags[0] || "",
+            name: site.name,
+            url: site.url,
+            description: site.description,
+          }));
+          for (let offset = 0; offset < candidates.length; offset += 100) {
+            const response = await fetch("/api/normalize-tags", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ candidates: candidates.slice(offset, offset + 100) }),
+            });
+            const payload = (await response.json()) as {
+              mappings?: Record<string, string>;
+              error?: string;
+            };
+            if (!response.ok) throw new Error(payload.error || "标签归并失败。");
+            Object.assign(mappings, payload.mappings || {});
+            await wait(250);
+          }
+          job = {
+            ...job,
+            sites: job.sites.map(site => ({
+              ...site,
+              tags: normalizeSingleTags([mappings[site.tags[0] || ""] || site.tags[0]]),
+            })),
+          };
+        } catch (error) {
+          job = {
+            ...job,
+            failures: [
+              ...job.failures,
+              { id: "tag-normalization", message: error instanceof Error ? error.message : "标签归并失败。" },
+            ],
+          };
+        }
+      }
+
+      job = { ...job, phase: "saving" };
+      setImportAnalysisJob(job);
+      const knownUrls = new Set(sites.map(site => normalizeBookmarkUrl(site.url).toLocaleLowerCase()));
+      const additions = job.sites.filter(site => {
+        const key = normalizeBookmarkUrl(site.url).toLocaleLowerCase();
+        if (!key || knownUrls.has(key)) return false;
+        knownUrls.add(key);
+        return true;
+      });
+      const nextSites = withSortOrder([...sites, ...additions]);
+      setCategories(job.categories);
+      setSites(nextSites);
+      setFavorites(current => Array.from(new Set([...current, ...job.favoriteIds])));
+      setTagCatalog(current =>
+        normalizeTagCatalog([
+          ...current,
+          ...job.importedTagCatalog,
+          ...tagsFromSites(additions),
+        ])
+      );
+      setActiveCategory("all");
+      try {
+        await persistSites(nextSites);
+        setStorageMode("cloud");
+      } catch {
+        setStorageMode("local");
+      }
+      await clearImportJob();
+      setImportAnalysisJob(null);
+      toast.success(
+        `已导入 ${additions.length} 个书签${job.failures.length ? `；${job.failures.length} 项未能完全补全` : ""}。`
+      );
+    } finally {
+      importJobRunningRef.current = false;
+      setImportingBookmarks(false);
+    }
+  };
+
   const importBookmarks = async (file?: File) => {
     if (!file) return;
     if (file.size > 8 * 1024 * 1024) {
@@ -2157,7 +2464,9 @@ export default function Home({
     }
     setImportingBookmarks(true);
     try {
-      const groups = parseBookmarkFile(await file.text());
+      const fileText = await file.text();
+      const groups = parseBookmarkFile(fileText);
+      const importedTagCatalog = parseExportTagCatalog(fileText);
       if (!groups.some(group => group.bookmarks.length))
         throw new Error("没有识别到可导入的书签。");
 
@@ -2177,6 +2486,7 @@ export default function Home({
       );
       const importedSites: Site[] = [];
       const importedFavoriteIds: string[] = [];
+      const pendingIds: string[] = [];
       let skipped = 0;
       let sequence = 0;
 
@@ -2218,13 +2528,13 @@ export default function Home({
           }
           const name = bookmark.name.trim() || fallbackName;
           const id = `imported-${Date.now()}-${sequence++}`;
-          importedSites.push({
+          const suppliedTags = normalizeSingleTags(bookmark.tags);
+          const suppliedDescription = bookmark.description?.trim().slice(0, 240);
+          const importedSite: Site = {
             id,
             name: name.slice(0, 80),
             url,
-            description:
-              bookmark.description?.trim().slice(0, 240) ||
-              "从书签文件导入的书签。",
+            description: suppliedDescription || "从书签文件导入的书签。",
             category: category.id,
             categoryLabel: category.label,
             icon: (bookmark.icon?.trim() || name.slice(0, 2) || "书").slice(
@@ -2232,11 +2542,21 @@ export default function Home({
               8
             ),
             iconUrl: bookmark.iconUrl?.trim() || faviconUrl(url),
+            iconScale:
+              typeof bookmark.iconScale === "number"
+                ? Math.min(100, Math.max(30, Math.round(bookmark.iconScale)))
+                : 100,
+            iconBackground:
+              typeof bookmark.iconBackground === "string" &&
+              /^#[0-9a-f]{6}$/i.test(bookmark.iconBackground)
+                ? bookmark.iconBackground.toLowerCase()
+                : "#ffffff",
             iconTone: "mint",
-            tags: normalizeSingleTags(bookmark.tags).length
-              ? normalizeSingleTags(bookmark.tags)
-              : [category.label],
-          });
+            tags: suppliedTags,
+          };
+          importedSites.push(importedSite);
+          if (!suppliedDescription || !suppliedTags.length)
+            pendingIds.push(importedSite.id);
           if (bookmark.favorite) importedFavoriteIds.push(id);
         });
       });
@@ -2250,31 +2570,47 @@ export default function Home({
         return;
       }
 
-      const nextSites = withSortOrder([...sites, ...importedSites]);
-      setCategories(nextCategories);
-      setSites(nextSites);
-      setFavorites(current =>
-        Array.from(new Set([...current, ...importedFavoriteIds]))
-      );
-      setActiveCategory("all");
-
-      let cloudSaved = false;
-      try {
-        await persistSites(nextSites);
-        cloudSaved = true;
-      } catch {
-        // localStorage effects keep the full import available when cloud sync is unavailable.
+      const job: ImportAnalysisJob = {
+        version: 1,
+        phase: "analyzing",
+        coldStart: tagCatalog.length === 0,
+        sites: importedSites,
+        categories: nextCategories,
+        favoriteIds: importedFavoriteIds,
+        importedTagCatalog,
+        pendingIds,
+        completed: 0,
+        failures: [],
+      };
+      await writeImportJob(job);
+      if (pendingIds.length) {
+        void runImportAnalysis(job);
+      } else {
+        // Complete imports use the same final save path without calling AI.
+        void runImportAnalysis({ ...job, phase: "saving" });
       }
-      setStorageMode(cloudSaved ? "cloud" : "local");
-      toast.success(
-        `已导入 ${importedSites.length} 个书签、${nextCategories.length - categories.length} 个分类${skipped ? `，跳过 ${skipped} 个重复或无效地址` : ""}。`
-      );
+      if (skipped) toast.message(`已跳过 ${skipped} 个重复或无效地址。`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "导入书签失败。");
     } finally {
       setImportingBookmarks(false);
     }
   };
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    void readImportJob<ImportAnalysisJob>()
+      .then(job => {
+        if (!job || cancelled || importJobRunningRef.current) return;
+        setImportAnalysisJob(job);
+        void runImportAnalysis(job);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
 
   const deleteSite = async (site: Site) => {
     if (
@@ -2400,7 +2736,7 @@ export default function Home({
   const applyBulkTag = () => {
     const nextTag = bulkTag.trim().slice(0, 24);
     const canonicalTag =
-      existingTagSuggestions.find(
+      approvedTagSuggestions.find(
         tag => tag.toLocaleLowerCase() === nextTag.toLocaleLowerCase()
       ) || nextTag;
     void applyBulkUpdate(
@@ -2719,6 +3055,72 @@ export default function Home({
     toast.success(`已新增“${label}”。`);
   };
 
+  const addTagToCatalog = (value: string) => {
+    const tag = normalizeTagCatalog([value])[0];
+    if (!tag) return false;
+    let added = false;
+    setTagCatalog(current => {
+      if (
+        current.some(
+          existing => existing.toLocaleLowerCase() === tag.toLocaleLowerCase()
+        )
+      )
+        return current;
+      added = true;
+      return [...current, tag].sort((left, right) =>
+        left.localeCompare(right, "zh-CN")
+      );
+    });
+    return added;
+  };
+
+  const createCatalogTag = () => {
+    const tag = normalizeTagCatalog([newCatalogTag])[0];
+    if (!tag) {
+      toast.error("请输入标签名称。 ");
+      return;
+    }
+    if (!addTagToCatalog(tag)) {
+      toast.message(`“${tag}”已经在标签词库中。`);
+      return;
+    }
+    setNewCatalogTag("");
+    toast.success(`已将“${tag}”加入标签词库。`);
+  };
+
+  const renameCatalogTag = (currentTag: string) => {
+    const nextTag = normalizeTagCatalog([editingCatalogTagName])[0];
+    if (!nextTag) {
+      toast.error("标签名称不能为空。 ");
+      return;
+    }
+    setTagCatalog(current =>
+      normalizeTagCatalog(
+        current.map(tag =>
+          tag.toLocaleLowerCase() === currentTag.toLocaleLowerCase()
+            ? nextTag
+            : tag
+        )
+      ).sort((left, right) => left.localeCompare(right, "zh-CN"))
+    );
+    setEditingCatalogTag(null);
+    setEditingCatalogTagName("");
+    toast.success("标签词库已更新；已有书签标签保持不变。 ");
+  };
+
+  const deleteCatalogTag = (tag: string) => {
+    setTagCatalog(current =>
+      current.filter(
+        existing => existing.toLocaleLowerCase() !== tag.toLocaleLowerCase()
+      )
+    );
+    if (editingCatalogTag === tag) {
+      setEditingCatalogTag(null);
+      setEditingCatalogTagName("");
+    }
+    toast.success(`已从标签词库移除“${tag}”；已有书签标签保持不变。`);
+  };
+
   const deleteCategory = (id: CategoryId) => {
     const category = categories.find(item => item.id === id);
     if (!category || category.system) return;
@@ -2816,6 +3218,7 @@ export default function Home({
         throw new Error(payload.error || "D1 保存失败。");
       }
       setSites(nextSites);
+      addTagToCatalog(site.tags[0] || "");
       setNewSite({
         name: "",
         url: "",
@@ -2860,7 +3263,7 @@ export default function Home({
             id: category.id,
             label: category.label,
           })),
-          existingTags: existingTagSuggestions,
+          approvedTags: approvedTagSuggestions,
           fallbackCategoryId: newSite.category || defaultContentCategoryId,
         }),
       });
@@ -2915,7 +3318,7 @@ export default function Home({
             id: category.id,
             label: category.label,
           })),
-          existingTags: existingTagSuggestions,
+          approvedTags: approvedTagSuggestions,
           fallbackCategoryId: editingSite.category,
         }),
       });
@@ -3035,6 +3438,7 @@ export default function Home({
       setSites(current =>
         current.map(site => (site.id === updatedSite.id ? updatedSite : site))
       );
+      addTagToCatalog(updatedSite.tags[0] || "");
       setEditingSite(null);
       setStorageMode(cloudSaved ? "cloud" : "local");
       toast.success(
@@ -3109,7 +3513,7 @@ export default function Home({
       <div className="ambient-orb orb-two" />
       <div className="ambient-orb orb-three" />
       <datalist id="site-tag-suggestions">
-        {existingTagSuggestions.map(tag => (
+        {approvedTagSuggestions.map(tag => (
           <option key={tag} value={tag} />
         ))}
       </datalist>
@@ -3252,6 +3656,7 @@ export default function Home({
                   <span>{editMode ? "完成" : "编辑"}</span>
                 </button>
                 <button
+                  ref={settingsTriggerRef}
                   className="topbar-button topbar-settings"
                   onClick={openSettings}
                 >
@@ -3650,6 +4055,53 @@ export default function Home({
         </div>
       </main>
 
+      {importAnalysisJob && (
+        <div
+          className="import-analysis-layer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="正在分析导入书签"
+        >
+          <div className="import-analysis-backdrop" />
+          <section className="import-analysis-dialog">
+            <Sparkles size={22} />
+            <p className="section-kicker">IMPORT INTELLIGENCE</p>
+            <h2>
+              {importAnalysisJob.phase === "normalizing"
+                ? "正在整理标签体系"
+                : importAnalysisJob.phase === "saving"
+                  ? "正在保存导入结果"
+                  : "正在补全书签信息"}
+            </h2>
+            <p>
+              {importAnalysisJob.phase === "analyzing"
+                ? `正在分析：${importAnalysisJob.currentName || "准备中"}（${importAnalysisJob.completed} / ${importAnalysisJob.completed + importAnalysisJob.pendingIds.length}）`
+                : "请保持此页面打开；任务会在刷新后自动继续。"}
+            </p>
+            <div className="import-analysis-progress" aria-hidden="true">
+              <span
+                style={{
+                  width: `${Math.round(
+                    (importAnalysisJob.completed /
+                      Math.max(
+                        1,
+                        importAnalysisJob.completed +
+                          importAnalysisJob.pendingIds.length
+                      )) *
+                      100
+                  )}%`,
+                }}
+              />
+            </div>
+            <small>
+              {importAnalysisJob.failures.length
+                ? `${importAnalysisJob.failures.length} 项暂未完全补全，其他条目会继续处理。`
+                : "正在按顺序调用分析服务，避免请求过载。"}
+            </small>
+          </section>
+        </div>
+      )}
+
       {settingsOpen && isAuthenticated && (
         <div
           className={`drawer-layer settings-drawer-layer ${settingsClosing ? "drawer-layer-closing" : ""}`}
@@ -3718,6 +4170,7 @@ export default function Home({
                 <h2>导航设置</h2>
               </div>
               <button
+                ref={settingsCloseRef}
                 className="drawer-close"
                 onClick={closeSettings}
                 aria-label="关闭设置"
@@ -4163,6 +4616,117 @@ export default function Home({
                     })}
                 </div>
               </section>
+              <section className="setting-section tag-catalog-settings">
+                <div className="setting-row">
+                  <div>
+                    <label className="setting-label">标签词库</label>
+                    <p className="setting-hint">
+                      只保存你确认过的标签，AI 仅在精确匹配时复用。
+                    </p>
+                  </div>
+                  <span className="bookmark-transfer-count">
+                    {tagCatalog.length} 个
+                  </span>
+                </div>
+                <div className="tag-catalog-add">
+                  <input
+                    value={newCatalogTag}
+                    onChange={event => setNewCatalogTag(event.target.value)}
+                    onKeyDown={event => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        createCatalogTag();
+                      }
+                    }}
+                    placeholder="添加人工标签"
+                    maxLength={24}
+                  />
+                  <button
+                    type="button"
+                    className="category-add-button"
+                    onClick={createCatalogTag}
+                  >
+                    <Plus size={13} /> 添加
+                  </button>
+                </div>
+                {tagCatalog.length > 8 && (
+                  <input
+                    className="tag-catalog-search"
+                    value={tagCatalogSearch}
+                    onChange={event => setTagCatalogSearch(event.target.value)}
+                    placeholder="搜索标签"
+                    aria-label="搜索标签词库"
+                  />
+                )}
+                <div className="tag-catalog-list">
+                  {filteredTagCatalog.map(tag => {
+                    const editing = editingCatalogTag === tag;
+                    return (
+                      <div className="tag-catalog-item" key={tag}>
+                        {editing ? (
+                          <input
+                            autoFocus
+                            value={editingCatalogTagName}
+                            onChange={event =>
+                              setEditingCatalogTagName(event.target.value)
+                            }
+                            onKeyDown={event => {
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                renameCatalogTag(tag);
+                              }
+                              if (event.key === "Escape") {
+                                setEditingCatalogTag(null);
+                                setEditingCatalogTagName("");
+                              }
+                            }}
+                            maxLength={24}
+                            aria-label={`重命名标签 ${tag}`}
+                          />
+                        ) : (
+                          <span>{tag}</span>
+                        )}
+                        <div className="tag-catalog-actions">
+                          {editing ? (
+                            <button
+                              type="button"
+                              onClick={() => renameCatalogTag(tag)}
+                              aria-label={`保存标签 ${tag}`}
+                            >
+                              <Check size={13} />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCatalogTag(tag);
+                                setEditingCatalogTagName(tag);
+                              }}
+                              aria-label={`编辑标签 ${tag}`}
+                            >
+                              <Pencil size={13} />
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => deleteCatalogTag(tag)}
+                            aria-label={`从词库移除 ${tag}`}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {!filteredTagCatalog.length && (
+                    <p className="tag-catalog-empty">
+                      {tagCatalog.length
+                        ? "没有匹配的标签。"
+                        : "词库还是空的；保存一个 AI 建议标签后会自动收录。"}
+                    </p>
+                  )}
+                </div>
+              </section>
               <section className="setting-section bookmark-transfer-settings">
                 <div className="setting-row">
                   <div>
@@ -4193,10 +4757,12 @@ export default function Home({
                   <button
                     type="button"
                     onClick={() => bookmarkImportRef.current?.click()}
-                    disabled={importingBookmarks}
+                    disabled={importingBookmarks || Boolean(importAnalysisJob)}
                   >
                     <Upload size={14} />{" "}
-                    {importingBookmarks ? "导入中…" : "导入书签"}
+                    {importingBookmarks || importAnalysisJob
+                      ? "导入处理中…"
+                      : "导入书签"}
                   </button>
                 </div>
               </section>
@@ -4454,7 +5020,11 @@ export default function Home({
                   </label>
                   <label>
                     网站标签
-                    <span className="optional">只保留一个最贴切的标签</span>
+                    <span className="optional">
+                      {isApprovedTag(editingSite.tags[0])
+                        ? "已收录标签"
+                        : "新标签建议：保存后将自动收录"}
+                    </span>
                     <input
                       list="site-tag-suggestions"
                       value={editingSite.tags[0] || ""}
@@ -4690,7 +5260,9 @@ export default function Home({
                       <label>
                         网站标签
                         <span className="optional">
-                          优先选择现有标签，也可修改
+                          {isApprovedTag(newSite.tags[0])
+                            ? "已收录标签"
+                            : "新标签建议：保存后将自动收录"}
                         </span>
                         <input
                           list="site-tag-suggestions"

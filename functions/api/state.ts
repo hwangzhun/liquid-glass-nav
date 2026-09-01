@@ -17,11 +17,13 @@ type PreferencesPayload = Record<string, string | number | boolean>;
 type StatePayload = {
   categories: CategoryPayload[];
   favorites: string[];
+  tagCatalog: string[];
   preferences: PreferencesPayload;
 };
 type StateRow = {
   categories: string;
   favorites: string;
+  tag_catalog: string;
   preferences: string;
   updated_at: string;
 };
@@ -53,12 +55,28 @@ const preferenceKeys = new Set([
   "backgroundImageAdaptive",
 ]);
 
+function sanitizeTagCatalog(value: unknown): string[] {
+  const seen = new Set<string>();
+  return (Array.isArray(value) ? value : [])
+    .flatMap(item =>
+      typeof item === "string" ? [item.trim().slice(0, 24)] : []
+    )
+    .filter(tag => {
+      const key = tag.toLocaleLowerCase();
+      if (!tag || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 500);
+}
+
 function sanitizeState(value: unknown): StatePayload {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid navigation state.");
   const data = value as Record<string, unknown>;
   const rawCategories = Array.isArray(data.categories) ? data.categories : [];
   const rawFavorites = Array.isArray(data.favorites) ? data.favorites : [];
+  const tagCatalog = sanitizeTagCatalog(data.tagCatalog);
   const rawPreferences =
     data.preferences &&
     typeof data.preferences === "object" &&
@@ -108,7 +126,7 @@ function sanitizeState(value: unknown): StatePayload {
     else if (typeof value === "string") preferences[key] = value.slice(0, 200);
     else preferences[key] = value as number | boolean;
   }
-  return { categories, favorites, preferences };
+  return { categories, favorites, tagCatalog, preferences };
 }
 
 function parseJson<T>(value: string, fallback: T): T {
@@ -123,7 +141,7 @@ export async function onRequestGet(context: PagesContext) {
   try {
     const result = await context.env.NAV_DB.prepare(
       `
-      SELECT categories, favorites, preferences, updated_at
+      SELECT categories, favorites, tag_catalog, preferences, updated_at
       FROM nav_state WHERE workspace_id = ?
     `
     )
@@ -135,6 +153,7 @@ export async function onRequestGet(context: PagesContext) {
       state: {
         categories: parseJson(row.categories, []),
         favorites: parseJson(row.favorites, []),
+        tagCatalog: parseJson(row.tag_catalog, []),
         preferences: parseJson(row.preferences, {}),
       },
       updatedAt: row.updated_at,
@@ -159,11 +178,12 @@ export async function onRequestPut(context: PagesContext) {
     const state = sanitizeState(await context.request.json());
     await context.env.NAV_DB.prepare(
       `
-      INSERT INTO nav_state (workspace_id, categories, favorites, preferences, updated_at)
-      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT INTO nav_state (workspace_id, categories, favorites, tag_catalog, preferences, updated_at)
+      VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(workspace_id) DO UPDATE SET
         categories = excluded.categories,
         favorites = excluded.favorites,
+        tag_catalog = excluded.tag_catalog,
         preferences = excluded.preferences,
         updated_at = CURRENT_TIMESTAMP
     `
@@ -172,6 +192,7 @@ export async function onRequestPut(context: PagesContext) {
         workspaceId(context.request),
         JSON.stringify(state.categories),
         JSON.stringify(state.favorites),
+        JSON.stringify(state.tagCatalog),
         JSON.stringify(state.preferences)
       )
       .run();

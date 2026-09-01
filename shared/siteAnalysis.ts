@@ -4,7 +4,7 @@ export type AnalyzeSiteInput = {
   name?: unknown;
   url?: unknown;
   categories?: unknown;
-  existingTags?: unknown;
+  approvedTags?: unknown;
   fallbackCategoryId?: unknown;
 };
 
@@ -20,6 +20,10 @@ export type SiteAnalysisConfig = {
   apiKey?: string;
   baseUrl?: string;
   model?: string;
+};
+
+export type TagNormalizationInput = {
+  candidates?: unknown;
 };
 
 const legacyCategories: AnalysisCategory[] = [
@@ -107,8 +111,8 @@ function normalizeInput(input: AnalyzeSiteInput) {
   if (!categories.length) throw new Error("至少需要一个可用分类。");
 
   const seenTags = new Set<string>();
-  const existingTags = (
-    Array.isArray(input.existingTags) ? input.existingTags : []
+  const approvedTags = (
+    Array.isArray(input.approvedTags) ? input.approvedTags : []
   )
     .flatMap(value =>
       typeof value === "string" ? [value.trim().slice(0, 24)] : []
@@ -134,7 +138,7 @@ function normalizeInput(input: AnalyzeSiteInput) {
     url: url.toString(),
     hostname: url.hostname.replace(/^www\./, ""),
     categories,
-    existingTags,
+    approvedTags,
     fallbackCategory,
   };
 }
@@ -166,36 +170,24 @@ function chooseLocalCategory(
 
 function chooseLocalTag(
   haystack: string,
-  existingTags: string[],
+  approvedTags: string[],
   category: AnalysisCategory
 ) {
-  const direct = existingTags.find(tag =>
+  const direct = approvedTags.find(tag =>
     haystack.includes(tag.toLocaleLowerCase())
   );
   if (direct) return direct;
-
-  const matchingGroup = categoryKeywords.find(group =>
-    group.some(word =>
-      `${category.id} ${category.label}`
-        .toLocaleLowerCase()
-        .includes(word.toLocaleLowerCase())
-    )
-  );
-  const related = matchingGroup
-    ? existingTags.find(tag =>
-        matchingGroup.some(word =>
-          tag.toLocaleLowerCase().includes(word.toLocaleLowerCase())
-        )
-      )
-    : undefined;
-  return related || category.label.slice(0, 24);
+  // A sparse approved vocabulary must not force every new site into one of
+  // its generic labels. The local fallback stays semantic and only reuses an
+  // approved tag on a direct website match.
+  return category.label.slice(0, 24);
 }
 
 function localAnalysis(
   name: string,
   hostname: string,
   categories: AnalysisCategory[],
-  existingTags: string[],
+  approvedTags: string[],
   fallbackCategory: AnalysisCategory
 ): SiteAnalysis {
   const inferredName =
@@ -208,7 +200,7 @@ function localAnalysis(
       );
   const haystack = `${inferredName} ${hostname}`.toLocaleLowerCase();
   const category = chooseLocalCategory(haystack, categories, fallbackCategory);
-  const tag = chooseLocalTag(haystack, existingTags, category);
+  const tag = chooseLocalTag(haystack, approvedTags, category);
   return {
     name: inferredName,
     description: `${inferredName} 是一个便于日常访问与使用的在线工具。`,
@@ -218,12 +210,12 @@ function localAnalysis(
   };
 }
 
-function canonicalTag(value: unknown, existingTags: string[]) {
+function canonicalTag(value: unknown, approvedTags: string[]) {
   if (typeof value !== "string") return "";
   const tag = value.trim().slice(0, 24);
   if (!tag) return "";
   return (
-    existingTags.find(
+    approvedTags.find(
       existing => existing.toLocaleLowerCase() === tag.toLocaleLowerCase()
     ) || tag
   );
@@ -233,7 +225,7 @@ function sanitizeAnalysis(
   value: unknown,
   fallback: SiteAnalysis,
   categories: AnalysisCategory[],
-  existingTags: string[]
+  approvedTags: string[]
 ): SiteAnalysis {
   if (!value || typeof value !== "object" || Array.isArray(value))
     return fallback;
@@ -247,7 +239,7 @@ function sanitizeAnalysis(
       : Array.isArray(data.tags)
         ? data.tags.find(tag => typeof tag === "string")
         : undefined;
-  const tag = canonicalTag(rawTag, existingTags) || fallback.tags[0] || "";
+  const tag = canonicalTag(rawTag, approvedTags) || fallback.tags[0] || "";
   return {
     name:
       typeof data.name === "string" && data.name.trim()
@@ -267,13 +259,13 @@ export async function analyzeSiteWithConfig(
   input: AnalyzeSiteInput,
   config: SiteAnalysisConfig = {}
 ): Promise<SiteAnalysis> {
-  const { name, url, hostname, categories, existingTags, fallbackCategory } =
+  const { name, url, hostname, categories, approvedTags, fallbackCategory } =
     normalizeInput(input);
   const fallback = localAnalysis(
     name,
     hostname,
     categories,
-    existingTags,
+    approvedTags,
     fallbackCategory
   );
   if (!config.apiKey) return fallback;
@@ -297,7 +289,7 @@ export async function analyzeSiteWithConfig(
         {
           role: "system",
           content:
-            "你是个人导航站的信息整理助手，只返回 JSON。category 必须是用户提供的分类 ID，绝对不能创建新分类。tag 只返回一个最贴切的简短标签；优先精确复用 existingTags，确无合适项时才创建一个新标签。description 使用简洁中文且不超过45字。",
+            "你是个人导航站的信息整理助手，只返回 JSON。category 必须是用户提供的分类 ID，绝对不能创建新分类。tag 只返回一个最贴切的简短中文标签。approvedTags 是人工审核过的标签词库：仅当其中某项与网站语义精确匹配时才复用其原词；绝不能为了复用而选择泛化或不相关标签，找不到精确匹配时应提出一个新的具体标签。description 使用简洁中文且不超过45字。",
         },
         {
           role: "user",
@@ -305,13 +297,13 @@ export async function analyzeSiteWithConfig(
             name,
             url,
             categories,
-            existingTags,
-            task: "识别网站名称，撰写简介，从现有分类中选择一个分类，并选择一个最贴切标签",
+            approvedTags,
+            task: "识别网站名称，撰写简介，从现有分类中选择一个分类，并提出一个最贴切标签",
             schema: {
               name: "string",
               description: "string",
               category: "one of categories[].id",
-              tag: "one existing tag when suitable, otherwise one new string",
+              tag: "one approved tag only on an exact semantic match, otherwise one new specific string",
             },
           }),
         },
@@ -330,7 +322,7 @@ export async function analyzeSiteWithConfig(
     JSON.parse(content),
     fallback,
     categories,
-    existingTags
+    approvedTags
   );
 }
 
@@ -340,4 +332,74 @@ export async function analyzeSite(input: AnalyzeSiteInput) {
     baseUrl: process.env.AI_BASE_URL || process.env.OPENAI_BASE_URL,
     model: process.env.AI_MODEL || process.env.OPENAI_MODEL,
   });
+}
+
+export async function normalizeTagsWithConfig(
+  input: TagNormalizationInput,
+  config: SiteAnalysisConfig = {}
+): Promise<Record<string, string>> {
+  const candidates = (Array.isArray(input.candidates) ? input.candidates : [])
+    .flatMap(value => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+      const item = value as Record<string, unknown>;
+      return typeof item.tag === "string"
+        ? [{
+            tag: item.tag.trim().slice(0, 24),
+            name: typeof item.name === "string" ? item.name.slice(0, 80) : "",
+            url: typeof item.url === "string" ? item.url.slice(0, 200) : "",
+            description:
+              typeof item.description === "string" ? item.description.slice(0, 120) : "",
+          }]
+        : [];
+    })
+    .filter(item => item.tag)
+    .slice(0, 500);
+  if (!config.apiKey || !candidates.length)
+    return Object.fromEntries(candidates.map(item => [item.tag, item.tag]));
+
+  const baseUrl = (config.baseUrl || "https://api.openai.com/v1").replace(/\/$/, "");
+  const model = config.model || "gpt-4.1-mini";
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.apiKey}` },
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content:
+            "你是标签词库整理助手，只返回 JSON。将同义或过度具体的候选标签归并成简短、具体的中文规范标签；不要按网站分类创建大而泛的词。",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            candidates,
+            schema: { mappings: [{ from: "candidate tag", to: "canonical tag" }] },
+          }),
+        },
+      ],
+    }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!response.ok) throw new Error(`标签整理服务暂时不可用（${response.status}）。`);
+  const content = ((await response.json()) as { choices?: Array<{ message?: { content?: string } }> })
+    .choices?.[0]?.message?.content;
+  if (!content) throw new Error("标签整理服务没有返回可用结果。");
+  const parsed = JSON.parse(content) as { mappings?: unknown };
+  const allowed = new Set(candidates.map(item => item.tag));
+  const mappings = Array.isArray(parsed.mappings) ? parsed.mappings : [];
+  const result: Record<string, string> = Object.fromEntries(
+    candidates.map(item => [item.tag, item.tag])
+  );
+  mappings.forEach(value => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const item = value as Record<string, unknown>;
+    if (typeof item.from !== "string" || typeof item.to !== "string") return;
+    const from = item.from.trim().slice(0, 24);
+    const to = item.to.trim().slice(0, 24);
+    if (allowed.has(from) && to) result[from] = to;
+  });
+  return result;
 }
