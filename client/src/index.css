@@ -7963,3 +7963,148 @@ html[data-app-skin="light"] .site-icon-settings-panel {
     transition-duration: 0.01ms;
   }
 }
+
+/* Final liquid-glass material layer. Keep this at the end of the cascade so
+   the flat product-page overrides above cannot disable backdrop blur again. */
+.app-shell {
+  --liquid-surface: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.13),
+      rgba(255, 255, 255, 0.045) 48%,
+      rgba(255, 255, 255, 0.08)
+    ),
+    rgba(18, 18, 21, 0.54);
+  --liquid-surface-hover: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.17),
+      rgba(255, 255, 255, 0.065) 48%,
+      rgba(255, 255, 255, 0.11)
+    ),
+    rgba(24, 24, 28, 0.62);
+  --liquid-border: rgba(255, 255, 255, 0.2);
+  --liquid-highlight: rgba(255, 255, 255, 0.28);
+  --liquid-shadow: 0 20px 52px rgba(0, 0, 0, 0.2);
+}
+
+.app-shell.skin-light {
+  --liquid-surface: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.68),
+      rgba(255, 255, 255, 0.34) 52%,
+      rgba(255, 255, 255, 0.48)
+    ),
+    rgba(255, 255, 255, 0.28);
+  --liquid-surface-hover: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.8),
+      rgba(255, 255, 255, 0.46) 52%,
+      rgba(255, 255, 255, 0.6)
+    ),
+    rgba(255, 255, 255, 0.38);
+  --liquid-border: rgba(255, 255, 255, 0.78);
+  --liquid-highlight: rgba(255, 255, 255, 0.96);
+  --liquid-shadow: 0 20px 48px rgba(45, 55, 72, 0.12);
+}
+
+.app-shell .glass-panel,
+.app-shell .search-panel,
+.app-shell .site-grid .site-card,
+.app-shell .bottom-strip,
+.app-shell .empty-state {
+  border: 1px solid var(--liquid-border);
+  background: var(--liquid-surface) !important;
+  box-shadow:
+    inset 0 1px 0 var(--liquid-highlight),
+    var(--liquid-shadow);
+  backdrop-filter: blur(28px) saturate(165%);
+  -webkit-backdrop-filter: blur(28px) saturate(165%);
+}
+
+.app-shell .site-grid .site-card:hover,
+.app-shell .site-grid .site-card:nth-child(4n + 4):hover,
+.app-shell .site-grid .site-card:nth-child(4n + 5):hover,
+.app-shell .site-grid .site-card-featured:hover,
+.app-shell .site-grid.site-grid-editing
+  .site-card:hover:not(.site-card-dragging) {
+  border-color: var(--liquid-border);
+  background: var(--liquid-surface-hover) !important;
+  box-shadow:
+    inset 0 1px 0 var(--liquid-highlight),
+    var(--liquid-shadow);
+}
+
+.app-shell .glass-panel::before,
+.app-shell .glass-panel::after,
+.app-shell .search-panel::before,
+.app-shell .search-panel::after,
+.app-shell .site-card::before,
+.app-shell .site-card::after,
+.app-shell .bottom-strip::before,
+.app-shell .bottom-strip::after {
+  display: block;
+}
+
+.app-shell .sidebar {
+  border-color: var(--liquid-border);
+  background: var(--liquid-surface) !important;
+  box-shadow:
+    inset -1px 0 var(--liquid-highlight),
+    18px 0 48px rgba(0, 0, 0, 0.18);
+  backdrop-filter: blur(30px) saturate(155%);
+  -webkit-backdrop-filter: blur(30px) saturate(155%);
+}
+
+.app-shell .settings-drawer,
+.app-shell .add-modal,
+.app-shell .edit-site-modal {
+  border-color: var(--liquid-border);
+  background: var(--liquid-surface) !important;
+  box-shadow:
+    inset 1px 0 var(--liquid-highlight),
+    -26px 0 70px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(32px) saturate(155%);
+  -webkit-backdrop-filter: blur(32px) saturate(155%);
+}
+
+.app-shell .settings-drawer .drawer-header,
+.app-shell .settings-drawer .drawer-footer,
+.app-shell .add-modal .modal-footer,
+.app-shell .edit-site-modal .modal-footer {
+  background: rgba(24, 24, 28, 0.36);
+}
+
+.app-shell.skin-light .settings-drawer .drawer-header,
+.app-shell.skin-light .settings-drawer .drawer-footer,
+.app-shell.skin-light .add-modal .modal-footer,
+.app-shell.skin-light .edit-site-modal .modal-footer {
+  background: rgba(255, 255, 255, 0.34);
+}
+
+@media (max-width: 780px) {
+  .app-shell .glass-panel,
+  .app-shell .search-panel,
+  .app-shell .site-grid .site-card,
+  .app-shell .bottom-strip,
+  .app-shell .empty-state,
+  .app-shell .sidebar,
+  .app-shell .settings-drawer,
+  .app-shell .add-modal,
+  .app-shell .edit-site-modal {
+    backdrop-filter: blur(20px) saturate(155%);
+    -webkit-backdrop-filter: blur(20px) saturate(155%);
+  }
+}
+
+@supports not (
+  (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))
+) {
+  .app-shell {
+    --liquid-surface: rgba(28, 28, 32, 0.92);
+    --liquid-surface-hover: rgba(36, 36, 40, 0.96);
+  }
+
+  .app-shell.skin-light {
+    --liquid-surface: rgba(255, 255, 255, 0.94);
+    --liquid-surface-hover: rgba(255, 255, 255, 0.98);
+  }
+}
