@@ -38,7 +38,6 @@ import {
 } from "lucide-react";
 import {
   CSSProperties,
-  DragEvent as ReactDragEvent,
   FormEvent,
   MouseEvent as ReactMouseEvent,
   useEffect,
@@ -70,11 +69,7 @@ type FlowBackgroundMode =
   | "flow-tropical-night";
 type FlowAnimationSpeed = "slow" | "normal" | "fast";
 type BackgroundMode =
-  | "mist"
-  | "blue"
-  | "midnight"
-  | "custom"
-  | FlowBackgroundMode;
+  "mist" | "blue" | "midnight" | "custom" | FlowBackgroundMode;
 type AnalysisSource = "ai" | "local";
 
 type SiteIconCandidate = {
@@ -97,6 +92,7 @@ type CloudPreferences = {
   backgroundImageBrightness?: number;
   backgroundImageContrast?: number;
   backgroundImageAdaptive?: boolean;
+  lowPerformanceMode?: boolean;
 };
 
 type CloudState = {
@@ -234,49 +230,56 @@ const flowBackgroundPresets: Array<{
     name: "翡翠",
     description: "翠绿流光",
     colors: ["#f0fbef", "#8fe3b0", "#22c79a", "#0b5f51"],
-    preview: "linear-gradient(135deg, #f0fbef 12.5%, #8fe3b0 37.5%, #22c79a 62.5%, #0b5f51 87.5%)",
+    preview:
+      "linear-gradient(135deg, #f0fbef 12.5%, #8fe3b0 37.5%, #22c79a 62.5%, #0b5f51 87.5%)",
   },
   {
     id: "flow-iridescent-cloud",
     name: "幻彩云",
     description: "蓝粉云霞",
     colors: ["#eaf4fc", "#1e50a2", "#f09199", "#895b8a"],
-    preview: "linear-gradient(135deg, #eaf4fc 12.5%, #1e50a2 37.5%, #f09199 62.5%, #895b8a 87.5%)",
+    preview:
+      "linear-gradient(135deg, #eaf4fc 12.5%, #1e50a2 37.5%, #f09199 62.5%, #895b8a 87.5%)",
   },
   {
     id: "flow-lagoon",
     name: "泻湖",
     description: "青蓝水色",
     colors: ["#eafbf7", "#5ce3e6", "#0f9cc2", "#274a78"],
-    preview: "linear-gradient(135deg, #eafbf7 12.5%, #5ce3e6 37.5%, #0f9cc2 62.5%, #274a78 87.5%)",
+    preview:
+      "linear-gradient(135deg, #eafbf7 12.5%, #5ce3e6 37.5%, #0f9cc2 62.5%, #274a78 87.5%)",
   },
   {
     id: "flow-oil-film",
     name: "油膜",
     description: "虹彩暗涌",
     colors: ["#181b3a", "#007bbb", "#00a3af", "#824880", "#f8e58c"],
-    preview: "linear-gradient(135deg, #181b3a 10%, #007bbb 30%, #00a3af 50%, #824880 70%, #f8e58c 90%)",
+    preview:
+      "linear-gradient(135deg, #181b3a 10%, #007bbb 30%, #00a3af 50%, #824880 70%, #f8e58c 90%)",
   },
   {
     id: "flow-opal",
     name: "欧泊",
     description: "柔和彩光",
     colors: ["#f6f9ff", "#9be0e8", "#c4b5f7", "#f8b8d9"],
-    preview: "linear-gradient(135deg, #f6f9ff 12.5%, #9be0e8 37.5%, #c4b5f7 62.5%, #f8b8d9 87.5%)",
+    preview:
+      "linear-gradient(135deg, #f6f9ff 12.5%, #9be0e8 37.5%, #c4b5f7 62.5%, #f8b8d9 87.5%)",
   },
   {
     id: "flow-pearl-light",
     name: "珍珠光",
     description: "温润珠光",
     colors: ["#eaf4fc", "#d6bbc6", "#a2d7dd", "#f8e58c", "#b28fce"],
-    preview: "linear-gradient(135deg, #eaf4fc 10%, #d6bbc6 30%, #a2d7dd 50%, #f8e58c 70%, #b28fce 90%)",
+    preview:
+      "linear-gradient(135deg, #eaf4fc 10%, #d6bbc6 30%, #a2d7dd 50%, #f8e58c 70%, #b28fce 90%)",
   },
   {
     id: "flow-tropical-night",
     name: "热带夜",
     description: "深色霓光",
     colors: ["#0d0d0d", "#460e44", "#824880", "#00a3af", "#68be8d"],
-    preview: "linear-gradient(135deg, #0d0d0d 10%, #460e44 30%, #824880 50%, #00a3af 70%, #68be8d 90%)",
+    preview:
+      "linear-gradient(135deg, #0d0d0d 10%, #460e44 30%, #824880 50%, #00a3af 70%, #68be8d 90%)",
   },
 ];
 
@@ -287,9 +290,27 @@ const flowAnimationSpeedOptions: Array<{
   canvasSpeed: number;
   cssDuration: number;
 }> = [
-  { id: "slow", label: "舒缓", description: "慢速流动", canvasSpeed: 16, cssDuration: 24 },
-  { id: "normal", label: "标准", description: "自然节奏", canvasSpeed: 26, cssDuration: 16 },
-  { id: "fast", label: "活跃", description: "快速变幻", canvasSpeed: 42, cssDuration: 9 },
+  {
+    id: "slow",
+    label: "舒缓",
+    description: "慢速流动",
+    canvasSpeed: 16,
+    cssDuration: 24,
+  },
+  {
+    id: "normal",
+    label: "标准",
+    description: "自然节奏",
+    canvasSpeed: 26,
+    cssDuration: 16,
+  },
+  {
+    id: "fast",
+    label: "活跃",
+    description: "快速变幻",
+    canvasSpeed: 42,
+    cssDuration: 9,
+  },
 ];
 
 const backgroundModes: BackgroundMode[] = [
@@ -341,7 +362,9 @@ function normalizeTagCatalog(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const seen = new Set<string>();
   return value
-    .flatMap(item => (typeof item === "string" ? [item.trim().slice(0, 24)] : []))
+    .flatMap(item =>
+      typeof item === "string" ? [item.trim().slice(0, 24)] : []
+    )
     .filter(tag => {
       const key = tag.toLocaleLowerCase();
       if (!tag || seen.has(key)) return false;
@@ -352,7 +375,9 @@ function normalizeTagCatalog(value: unknown): string[] {
 }
 
 function tagsFromSites(sites: Site[]): string[] {
-  return normalizeTagCatalog(sites.flatMap(site => normalizeSingleTags(site.tags)));
+  return normalizeTagCatalog(
+    sites.flatMap(site => normalizeSingleTags(site.tags))
+  );
 }
 
 function normalizeSites(value: Site[]) {
@@ -579,7 +604,10 @@ function parseBookmarkFile(text: string): ImportedBookmarkGroup[] {
 
 function parseExportTagCatalog(text: string): string[] {
   try {
-    const parsed = JSON.parse(text.replace(/^\uFEFF/, "")) as Record<string, unknown>;
+    const parsed = JSON.parse(text.replace(/^\uFEFF/, "")) as Record<
+      string,
+      unknown
+    >;
     return isRecord(parsed) && parsed.format === "liquid-glass-nav"
       ? normalizeTagCatalog(parsed.tagCatalog)
       : [];
@@ -1197,6 +1225,7 @@ export default function Home({
   const settingsWasOpenRef = useRef(false);
   const bookmarkImportRef = useRef<HTMLInputElement>(null);
   const categoryNavRef = useRef<HTMLElement>(null);
+  const categorySettingsListRef = useRef<HTMLDivElement>(null);
   const draggingSiteIdRef = useRef<string | null>(null);
   const siteDragMovedRef = useRef(false);
   const lastDragTargetRef = useRef<string | null>(null);
@@ -1205,6 +1234,15 @@ export default function Home({
   const shouldAnimateSiteLayoutRef = useRef(false);
   const draggingCategoryIdRef = useRef<string | null>(null);
   const lastCategoryDragTargetRef = useRef<string | null>(null);
+  const categoryLayoutPositionsRef = useRef<Map<string, DOMRect>>(new Map());
+  const categoryLayoutAnimationsRef = useRef<Map<string, Animation>>(new Map());
+  const shouldAnimateCategoryLayoutRef = useRef(false);
+  const categoryLongPressTimerRef = useRef<number | null>(null);
+  const categoryPointerDragRef = useRef<{
+    id: CategoryId;
+    pointerId: number;
+    active: boolean;
+  } | null>(null);
   const settingsCloseTimerRef = useRef<number | null>(null);
   const settingsPreviewModeTimerRef = useRef<number | null>(null);
   const addCloseTimerRef = useRef<number | null>(null);
@@ -1307,6 +1345,9 @@ export default function Home({
   const [backgroundImageAdaptive, setBackgroundImageAdaptive] = useState(() =>
     readLocal("tidal-background-image-adaptive", true)
   );
+  const [lowPerformanceMode, setLowPerformanceMode] = useState(() =>
+    readLocal("tidal-low-performance-mode", false)
+  );
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     normalizeViewMode(readLocal("tidal-view", "large"))
   );
@@ -1330,6 +1371,17 @@ export default function Home({
   const [pendingDeleteCategoryId, setPendingDeleteCategoryId] =
     useState<CategoryId | null>(null);
   const [draggingCategoryId, setDraggingCategoryId] =
+    useState<CategoryId | null>(null);
+  const [categoryDragGhost, setCategoryDragGhost] = useState<{
+    category: Category;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [keyboardSortingCategoryId, setKeyboardSortingCategoryId] =
+    useState<CategoryId | null>(null);
+  const [newlyCreatedCategoryId, setNewlyCreatedCategoryId] =
     useState<CategoryId | null>(null);
   const [newSite, setNewSite] = useState({
     name: "",
@@ -1463,6 +1515,8 @@ export default function Home({
             setBackgroundImageContrast(preferences.backgroundImageContrast);
           if (typeof preferences.backgroundImageAdaptive === "boolean")
             setBackgroundImageAdaptive(preferences.backgroundImageAdaptive);
+          if (typeof preferences.lowPerformanceMode === "boolean")
+            setLowPerformanceMode(preferences.lowPerformanceMode);
         } else {
           const seedCategories = isAuthenticated
             ? [...categories]
@@ -1506,6 +1560,7 @@ export default function Home({
                   backgroundImageBrightness,
                   backgroundImageContrast,
                   backgroundImageAdaptive,
+                  lowPerformanceMode,
                 },
               }),
             });
@@ -1631,6 +1686,12 @@ export default function Home({
     );
   }, [backgroundImageAdaptive]);
   useEffect(() => {
+    window.localStorage.setItem(
+      "tidal-low-performance-mode",
+      JSON.stringify(lowPerformanceMode)
+    );
+  }, [lowPerformanceMode]);
+  useEffect(() => {
     window.localStorage.setItem("tidal-categories", JSON.stringify(categories));
   }, [categories]);
 
@@ -1660,6 +1721,7 @@ export default function Home({
                 backgroundImageBrightness,
                 backgroundImageContrast,
                 backgroundImageAdaptive,
+                lowPerformanceMode,
               },
             }),
           });
@@ -1697,6 +1759,7 @@ export default function Home({
     backgroundImageBrightness,
     backgroundImageContrast,
     backgroundImageAdaptive,
+    lowPerformanceMode,
   ]);
 
   useEffect(() => {
@@ -1864,13 +1927,7 @@ export default function Home({
       Boolean(editingSite);
     document.documentElement.classList.toggle("overlay-open", overlayOpen);
     return () => document.documentElement.classList.remove("overlay-open");
-  }, [
-    addOpen,
-    editingSite,
-    mobileNavClosing,
-    mobileNavOpen,
-    settingsOpen,
-  ]);
+  }, [addOpen, editingSite, mobileNavClosing, mobileNavOpen, settingsOpen]);
 
   useEffect(() => {
     if (mobileNavOpen) {
@@ -2001,6 +2058,39 @@ export default function Home({
     () => categories.filter(category => !category.system),
     [categories]
   );
+
+  useLayoutEffect(() => {
+    const list = categorySettingsListRef.current;
+    if (!list) return;
+    const nextPositions = new Map<string, DOMRect>();
+    list.querySelectorAll<HTMLElement>("[data-category-id]").forEach(item => {
+      const id = item.dataset.categoryId;
+      if (id) nextPositions.set(id, item.getBoundingClientRect());
+    });
+    if (shouldAnimateCategoryLayoutRef.current) {
+      nextPositions.forEach((nextRect, id) => {
+        if (id === draggingCategoryIdRef.current) return;
+        const previousRect = categoryLayoutPositionsRef.current.get(id);
+        const deltaY = previousRect ? previousRect.top - nextRect.top : 0;
+        if (!deltaY) return;
+        categoryLayoutAnimationsRef.current.get(id)?.cancel();
+        const item = list.querySelector<HTMLElement>(
+          `[data-category-id="${CSS.escape(id)}"]`
+        );
+        if (!item) return;
+        const animation = item.animate(
+          [
+            { transform: `translateY(${deltaY}px)` },
+            { transform: "translateY(0)" },
+          ],
+          { duration: 340, easing: "cubic-bezier(0.22, 1, 0.36, 1)" }
+        );
+        categoryLayoutAnimationsRef.current.set(id, animation);
+      });
+      shouldAnimateCategoryLayoutRef.current = false;
+    }
+    categoryLayoutPositionsRef.current = nextPositions;
+  }, [categories, addingCategory, editingCategoryId, pendingDeleteCategoryId]);
   const defaultContentCategoryId = contentCategories[0]?.id || "";
   const approvedTagSuggestions = tagCatalog;
   const filteredTagCatalog = useMemo(() => {
@@ -2012,7 +2102,9 @@ export default function Home({
   const isApprovedTag = (value?: string) =>
     Boolean(
       value &&
-        tagCatalog.some(tag => tag.toLocaleLowerCase() === value.toLocaleLowerCase())
+      tagCatalog.some(
+        tag => tag.toLocaleLowerCase() === value.toLocaleLowerCase()
+      )
     );
 
   const openAddSite = () => {
@@ -2311,8 +2403,7 @@ export default function Home({
         setImportAnalysisJob(job);
         await writeImportJob(job);
         let result:
-          | { name?: string; description?: string; tags?: string[] }
-          | undefined;
+          { name?: string; description?: string; tags?: string[] } | undefined;
         let errorMessage = "";
         for (let attempt = 0; attempt < 3; attempt += 1) {
           try {
@@ -2324,7 +2415,10 @@ export default function Home({
                 url: site.url,
                 categories: job.categories
                   .filter(category => !category.system)
-                  .map(category => ({ id: category.id, label: category.label })),
+                  .map(category => ({
+                    id: category.id,
+                    label: category.label,
+                  })),
                 approvedTags: job.coldStart ? [] : tagCatalog,
                 fallbackCategoryId: site.category,
               }),
@@ -2336,7 +2430,8 @@ export default function Home({
             result = payload;
             break;
           } catch (error) {
-            errorMessage = error instanceof Error ? error.message : "分析失败。";
+            errorMessage =
+              error instanceof Error ? error.message : "分析失败。";
             if (attempt < 2) await wait(600 * 2 ** attempt);
           }
         }
@@ -2390,13 +2485,16 @@ export default function Home({
             const response = await fetch("/api/normalize-tags", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ candidates: candidates.slice(offset, offset + 100) }),
+              body: JSON.stringify({
+                candidates: candidates.slice(offset, offset + 100),
+              }),
             });
             const payload = (await response.json()) as {
               mappings?: Record<string, string>;
               error?: string;
             };
-            if (!response.ok) throw new Error(payload.error || "标签归并失败。");
+            if (!response.ok)
+              throw new Error(payload.error || "标签归并失败。");
             Object.assign(mappings, payload.mappings || {});
             await wait(250);
           }
@@ -2404,7 +2502,9 @@ export default function Home({
             ...job,
             sites: job.sites.map(site => ({
               ...site,
-              tags: normalizeSingleTags([mappings[site.tags[0] || ""] || site.tags[0]]),
+              tags: normalizeSingleTags([
+                mappings[site.tags[0] || ""] || site.tags[0],
+              ]),
             })),
           };
         } catch (error) {
@@ -2412,7 +2512,11 @@ export default function Home({
             ...job,
             failures: [
               ...job.failures,
-              { id: "tag-normalization", message: error instanceof Error ? error.message : "标签归并失败。" },
+              {
+                id: "tag-normalization",
+                message:
+                  error instanceof Error ? error.message : "标签归并失败。",
+              },
             ],
           };
         }
@@ -2420,7 +2524,9 @@ export default function Home({
 
       job = { ...job, phase: "saving" };
       setImportAnalysisJob(job);
-      const knownUrls = new Set(sites.map(site => normalizeBookmarkUrl(site.url).toLocaleLowerCase()));
+      const knownUrls = new Set(
+        sites.map(site => normalizeBookmarkUrl(site.url).toLocaleLowerCase())
+      );
       const additions = job.sites.filter(site => {
         const key = normalizeBookmarkUrl(site.url).toLocaleLowerCase();
         if (!key || knownUrls.has(key)) return false;
@@ -2430,7 +2536,9 @@ export default function Home({
       const nextSites = withSortOrder([...sites, ...additions]);
       setCategories(job.categories);
       setSites(nextSites);
-      setFavorites(current => Array.from(new Set([...current, ...job.favoriteIds])));
+      setFavorites(current =>
+        Array.from(new Set([...current, ...job.favoriteIds]))
+      );
       setTagCatalog(current =>
         normalizeTagCatalog([
           ...current,
@@ -2529,7 +2637,9 @@ export default function Home({
           const name = bookmark.name.trim() || fallbackName;
           const id = `imported-${Date.now()}-${sequence++}`;
           const suppliedTags = normalizeSingleTags(bookmark.tags);
-          const suppliedDescription = bookmark.description?.trim().slice(0, 240);
+          const suppliedDescription = bookmark.description
+            ?.trim()
+            .slice(0, 240);
           const importedSite: Site = {
             id,
             name: name.slice(0, 80),
@@ -2958,6 +3068,7 @@ export default function Home({
 
   const moveCategory = (sourceId: CategoryId, targetId: CategoryId) => {
     if (sourceId === targetId) return;
+    shouldAnimateCategoryLayoutRef.current = true;
     setCategories(current => {
       const from = current.findIndex(category => category.id === sourceId);
       const to = current.findIndex(category => category.id === targetId);
@@ -2973,57 +3084,123 @@ export default function Home({
     event: React.PointerEvent<HTMLButtonElement>,
     categoryId: CategoryId
   ) => {
-    event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    draggingCategoryIdRef.current = categoryId;
-    lastCategoryDragTargetRef.current = null;
-    setDraggingCategoryId(categoryId);
+    categoryPointerDragRef.current = {
+      id: categoryId,
+      pointerId: event.pointerId,
+      active: false,
+    };
+    categoryLongPressTimerRef.current = window.setTimeout(() => {
+      const pending = categoryPointerDragRef.current;
+      if (!pending || pending.id !== categoryId) return;
+      const item = categorySettingsListRef.current?.querySelector<HTMLElement>(
+        `[data-category-id="${CSS.escape(categoryId)}"]`
+      );
+      const category = categories.find(item => item.id === categoryId);
+      if (!item || !category) return;
+      const rect = item.getBoundingClientRect();
+      pending.active = true;
+      draggingCategoryIdRef.current = categoryId;
+      lastCategoryDragTargetRef.current = null;
+      setDraggingCategoryId(categoryId);
+      setCategoryDragGhost({
+        category,
+        x: event.clientX - rect.width / 2,
+        y: event.clientY - rect.height / 2,
+        width: rect.width,
+        height: rect.height,
+      });
+    }, 180);
   };
 
   const continueCategoryDrag = (
     event: React.PointerEvent<HTMLButtonElement>
   ) => {
-    const sourceId = draggingCategoryIdRef.current;
-    if (!sourceId) return;
-    const targetElement = document
-      .elementFromPoint(event.clientX, event.clientY)
-      ?.closest<HTMLElement>("[data-category-id]");
-    const targetId = targetElement?.dataset.categoryId;
+    const pending = categoryPointerDragRef.current;
+    if (!pending || pending.pointerId !== event.pointerId) return;
+    if (!pending.active) return;
+    event.preventDefault();
+    setCategoryDragGhost(current =>
+      current
+        ? {
+            ...current,
+            x: event.clientX - current.width / 2,
+            y: event.clientY - current.height / 2,
+          }
+        : current
+    );
+    const drawerContent = event.currentTarget
+      .closest<HTMLElement>(".settings-drawer")
+      ?.querySelector<HTMLElement>(".drawer-content");
+    if (drawerContent) {
+      const drawerRect = drawerContent.getBoundingClientRect();
+      const edge = 56;
+      if (event.clientY < drawerRect.top + edge)
+        drawerContent.scrollBy({ top: -12, behavior: "auto" });
+      else if (event.clientY > drawerRect.bottom - edge)
+        drawerContent.scrollBy({ top: 12, behavior: "auto" });
+    }
+    const targets = Array.from(
+      categorySettingsListRef.current?.querySelectorAll<HTMLElement>(
+        "[data-category-id]"
+      ) || []
+    );
+    const target = targets.find(item => {
+      const rect = item.getBoundingClientRect();
+      return event.clientY >= rect.top && event.clientY <= rect.bottom;
+    });
+    const targetId = target?.dataset.categoryId;
     if (
       !targetId ||
-      targetId === sourceId ||
+      targetId === pending.id ||
       lastCategoryDragTargetRef.current === targetId
     )
       return;
     lastCategoryDragTargetRef.current = targetId;
-    moveCategory(sourceId, targetId);
+    moveCategory(pending.id, targetId);
   };
 
   const endCategoryDrag = () => {
+    if (categoryLongPressTimerRef.current !== null) {
+      window.clearTimeout(categoryLongPressTimerRef.current);
+      categoryLongPressTimerRef.current = null;
+    }
+    categoryPointerDragRef.current = null;
     draggingCategoryIdRef.current = null;
     lastCategoryDragTargetRef.current = null;
     setDraggingCategoryId(null);
+    setCategoryDragGhost(null);
   };
 
-  const beginNativeCategoryDrag = (
-    event: ReactDragEvent<HTMLButtonElement>,
+  const handleCategoryKeyboardSort = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
     categoryId: CategoryId
   ) => {
-    draggingCategoryIdRef.current = categoryId;
-    setDraggingCategoryId(categoryId);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", categoryId);
-  };
-
-  const dropNativeCategory = (
-    event: ReactDragEvent<HTMLDivElement>,
-    targetId: CategoryId
-  ) => {
+    const sortable = categories.filter(category => !category.system);
+    const currentIndex = sortable.findIndex(
+      category => category.id === categoryId
+    );
+    if (event.key === "Escape" && keyboardSortingCategoryId) {
+      event.preventDefault();
+      setKeyboardSortingCategoryId(null);
+      return;
+    }
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      setKeyboardSortingCategoryId(current =>
+        current === categoryId ? null : categoryId
+      );
+      return;
+    }
+    if (
+      keyboardSortingCategoryId !== categoryId ||
+      !["ArrowUp", "ArrowDown"].includes(event.key)
+    )
+      return;
     event.preventDefault();
-    const sourceId =
-      draggingCategoryIdRef.current || event.dataTransfer.getData("text/plain");
-    if (sourceId) moveCategory(sourceId, targetId);
-    endCategoryDrag();
+    const nextIndex = currentIndex + (event.key === "ArrowUp" ? -1 : 1);
+    const target = sortable[nextIndex];
+    if (target) moveCategory(categoryId, target.id);
   };
 
   const addCategory = () => {
@@ -3038,6 +3215,7 @@ export default function Home({
       iconKey: newCategoryIcon,
       color: "blue",
     };
+    shouldAnimateCategoryLayoutRef.current = true;
     setCategories(current => {
       const favoritesIndex = current.findIndex(item => item.id === "favorites");
       const next = [...current];
@@ -3051,7 +3229,9 @@ export default function Home({
     setNewCategoryName("");
     setNewCategoryIcon("folder");
     setAddingCategory(false);
+    setNewlyCreatedCategoryId(category.id);
     setEditingCategoryId(category.id);
+    window.setTimeout(() => setNewlyCreatedCategoryId(null), 360);
     toast.success(`已新增“${label}”。`);
   };
 
@@ -3135,6 +3315,7 @@ export default function Home({
         ? { ...site, category: fallback.id, categoryLabel: fallback.label }
         : site
     );
+    shouldAnimateCategoryLayoutRef.current = true;
     setCategories(current => current.filter(item => item.id !== id));
     setSites(nextSites);
     setNewSite(current =>
@@ -3478,7 +3659,7 @@ export default function Home({
 
   return (
     <div
-      className={`app-shell skin-${skin} background-${backgroundMode} ${activeFlowBackground && !desktopFlowCanvas && !backgroundImage ? "flow-background-css" : ""} ${backgroundImage ? "has-background-image" : ""} ${backgroundImageAdaptive ? "background-image-adaptive" : ""} ${editMode ? "app-editing" : ""}`}
+      className={`app-shell skin-${skin} background-${backgroundMode} ${activeFlowBackground && !desktopFlowCanvas && !backgroundImage ? "flow-background-css" : ""} ${backgroundImage ? "has-background-image" : ""} ${backgroundImageAdaptive ? "background-image-adaptive" : ""} ${lowPerformanceMode ? "low-performance-mode" : ""} ${editMode ? "app-editing" : ""}`}
       style={
         {
           "--custom-background": customBackground,
@@ -4263,9 +4444,7 @@ export default function Home({
                     <div className="flow-speed-heading">
                       <div>
                         <strong>渐变动画速率</strong>
-                        <small>
-                          桌面使用流体效果，移动设备使用轻量渐变。
-                        </small>
+                        <small>桌面使用流体效果，移动设备使用轻量渐变。</small>
                       </div>
                       <span>{activeFlowAnimationSpeed.label}</span>
                     </div>
@@ -4403,6 +4582,25 @@ export default function Home({
                   )}
                 </div>
               </section>
+              <section className="setting-section performance-settings">
+                <div className="setting-row">
+                  <div>
+                    <label className="setting-label">低占用模式</label>
+                    <p className="setting-hint">
+                      用半透明材质替代所有界面毛玻璃，减少图形占用；不影响背景图片模糊。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className={`toggle ${lowPerformanceMode ? "toggle-on" : ""}`}
+                    onClick={() => setLowPerformanceMode(current => !current)}
+                    aria-pressed={lowPerformanceMode}
+                    aria-label="低占用模式"
+                  >
+                    <span />
+                  </button>
+                </div>
+              </section>
               <section className="setting-section category-settings">
                 <div className="setting-row category-settings-heading">
                   <div>
@@ -4467,7 +4665,10 @@ export default function Home({
                     </div>
                   </div>
                 )}
-                <div className="category-settings-list">
+                <div
+                  className="category-settings-list"
+                  ref={categorySettingsListRef}
+                >
                   {categoryMeta
                     .filter(category => !category.system)
                     .map(category => {
@@ -4482,13 +4683,9 @@ export default function Home({
                         pendingDeleteCategoryId === category.id;
                       return (
                         <div
-                          className={`category-setting-item ${draggingCategoryId === category.id ? "category-setting-item-dragging" : ""} ${isEditing ? "category-setting-item-editing" : ""}`}
+                          className={`category-setting-item ${draggingCategoryId === category.id ? "category-setting-item-dragging" : ""} ${isEditing ? "category-setting-item-editing" : ""} ${newlyCreatedCategoryId === category.id ? "category-setting-item-entering" : ""}`}
                           key={category.id}
                           data-category-id={category.id}
-                          onDragOver={event => event.preventDefault()}
-                          onDrop={event =>
-                            dropNativeCategory(event, category.id)
-                          }
                         >
                           <CategoryIcon category={category} />
                           <div className="category-setting-copy">
@@ -4516,19 +4713,21 @@ export default function Home({
                             <button
                               type="button"
                               className="category-drag-handle"
-                              draggable
-                              onDragStart={event =>
-                                beginNativeCategoryDrag(event, category.id)
-                              }
-                              onDragEnd={endCategoryDrag}
                               onPointerDown={event =>
                                 beginCategoryDrag(event, category.id)
                               }
                               onPointerMove={continueCategoryDrag}
                               onPointerUp={endCategoryDrag}
                               onPointerCancel={endCategoryDrag}
+                              onKeyDown={event =>
+                                handleCategoryKeyboardSort(event, category.id)
+                              }
+                              aria-grabbed={
+                                keyboardSortingCategoryId === category.id ||
+                                draggingCategoryId === category.id
+                              }
                               aria-label={`拖动排序 ${category.label}`}
-                              title="拖动排序"
+                              title="长按拖动排序；键盘按空格后使用方向键"
                             >
                               <GripVertical size={15} />
                             </button>
@@ -4872,6 +5071,25 @@ export default function Home({
               </button>
             </div>
           </aside>
+          {categoryDragGhost && (
+            <div
+              className="category-drag-ghost"
+              style={{
+                left: categoryDragGhost.x,
+                top: categoryDragGhost.y,
+                width: categoryDragGhost.width,
+                height: categoryDragGhost.height,
+              }}
+              aria-hidden="true"
+            >
+              <CategoryIcon category={categoryDragGhost.category} />
+              <div className="category-setting-copy">
+                <strong>{categoryDragGhost.category.label}</strong>
+                <span>正在排序</span>
+              </div>
+              <GripVertical size={15} />
+            </div>
+          )}
         </div>
       )}
 

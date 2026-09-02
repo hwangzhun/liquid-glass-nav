@@ -1,6 +1,6 @@
 {
   "name": "liquid-glass-nav",
-  "version": "V1.1.5",
+  "version": "V1.1.7",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -9,6 +9,7 @@
     "build": "vite build && esbuild server/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
     "build:pages": "vite build",
     "deploy:pages": "pnpm build:pages && wrangler pages deploy dist/public",
+    "deploy:cloudflare": "bash scripts/deploy-cloudflare.sh",
     "d1:create": "wrangler d1 create liquid-glass-nav",
     "d1:migrate": "wrangler d1 migrations apply liquid-glass-nav --remote",
     "start": "NODE_ENV=production node dist/index.js",

@@ -53,6 +53,7 @@ const preferenceKeys = new Set([
   "backgroundImageBrightness",
   "backgroundImageContrast",
   "backgroundImageAdaptive",
+  "lowPerformanceMode",
 ]);
 
 function sanitizeTagCatalog(value: unknown): string[] {

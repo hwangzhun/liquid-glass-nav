@@ -36,6 +36,11 @@
 
 ## 更新日志
 
+### 2026-09-02 V1.1.7
+
+- 新增 `npm run deploy:cloudflare` 一键部署脚本，可检查 Cloudflare 登录、创建或复用 Pages 与 D1、上传生产密钥、执行远端迁移并发布。
+- 新增 Cloudflare 部署指南，说明部署前置条件、首次部署、后续发布、检查项与常见问题。
+
 ### 2026-08-31 V1.1.2
 
 - 恢复暗色侧栏、搜索框和设置抽屉的液态玻璃材质
@@ -179,6 +184,24 @@ node -e "const sharp=require('sharp'); Promise.all([sharp('logo.svg').resize(512
 ## 部署到 Cloudflare Pages
 
 > 本项目使用 `functions/` 目录中的 Pages Functions。请创建 **Pages 项目**，不要在 Workers Builds 中创建普通 Worker 项目。
+
+### 一键部署（推荐）
+
+完整的前置条件、首次部署、后续发布与排查说明见 [Cloudflare 一键部署指南](docs/cloudflare-deployment.md)。
+
+安装依赖并登录 Cloudflare 后，在项目根目录运行：
+
+```bash
+npm install
+npx wrangler login
+npm run deploy:cloudflare
+```
+
+脚本会检查登录和权限，检查或创建同名的 Pages 项目，并检查 `wrangler.jsonc` 中的 D1 数据库。当前账号无法访问其中的数据库时，会在 APAC 创建新的同名 D1、把新的 UUID 写回 `wrangler.jsonc`，随后应用所有远端迁移并发布。
+
+运行时必须安全输入 `NAV_PASSWORD`；可选择输入 AI 网站分析所需的 `AI_API_KEY`、`AI_BASE_URL` 和 `AI_MODEL`。这些值通过 Cloudflare Pages Secret 上传，不会写入 `.env` 或打印到终端。重复运行会复用当前账号可访问的 D1，并只应用尚未执行的迁移。
+
+脚本需要 Cloudflare 账号具备 Pages、D1、Secrets 和部署权限。它不会删除数据库或覆盖已有数据；请在首次成功创建数据库后提交更新过的 `wrangler.jsonc`，使后续部署可复用同一数据库。
 
 ### 1. 登录 Cloudflare
 

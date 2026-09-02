@@ -7785,14 +7785,16 @@ html[data-app-skin="light"] .site-icon-settings-panel {
 
 /* Lightweight sidebar-inspired material for every entry: no per-card blur. */
 .app-shell {
-  --entry-card-surface: linear-gradient(
+  --entry-card-surface:
+    linear-gradient(
       145deg,
       rgba(255, 255, 255, 0.12),
       rgba(255, 255, 255, 0.035) 48%,
       rgba(255, 255, 255, 0.075)
     ),
     rgba(20, 20, 22, 0.72);
-  --entry-card-hover: linear-gradient(
+  --entry-card-hover:
+    linear-gradient(
       145deg,
       rgba(255, 255, 255, 0.16),
       rgba(255, 255, 255, 0.055) 48%,
@@ -7803,14 +7805,16 @@ html[data-app-skin="light"] .site-icon-settings-panel {
 }
 
 .app-shell.skin-light {
-  --entry-card-surface: linear-gradient(
+  --entry-card-surface:
+    linear-gradient(
       145deg,
       rgba(255, 255, 255, 0.78),
       rgba(255, 255, 255, 0.42) 52%,
       rgba(255, 255, 255, 0.58)
     ),
     rgba(255, 255, 255, 0.42);
-  --entry-card-hover: linear-gradient(
+  --entry-card-hover:
+    linear-gradient(
       145deg,
       rgba(255, 255, 255, 0.9),
       rgba(255, 255, 255, 0.56) 52%,
@@ -7849,7 +7853,9 @@ html[data-app-skin="light"] .site-icon-settings-panel {
 .app-shell.skin-light .site-grid .site-card:nth-child(4n + 4):hover,
 .app-shell.skin-light .site-grid .site-card:nth-child(4n + 5):hover,
 .app-shell.skin-light .site-grid .site-card-featured:hover,
-.app-shell.skin-light .site-grid.site-grid-editing .site-card:hover:not(.site-card-dragging) {
+.app-shell.skin-light
+  .site-grid.site-grid-editing
+  .site-card:hover:not(.site-card-dragging) {
   border-color: transparent;
   background: var(--apple-cool-wash) !important;
   box-shadow: none;
@@ -7894,16 +7900,16 @@ html[data-app-skin="light"] .site-icon-settings-panel {
    It covers controls that previously changed state abruptly, without animating
    layout-only nodes or continuous canvas effects. */
 :where(
-    a,
-    button,
-    input,
-    textarea,
-    select,
-    summary,
-    [role="button"],
-    [role="tab"],
-    [role="switch"]
-  ) {
+  a,
+  button,
+  input,
+  textarea,
+  select,
+  summary,
+  [role="button"],
+  [role="tab"],
+  [role="switch"]
+) {
   transition:
     color 180ms var(--ease-out, ease-out),
     background-color 180ms var(--ease-out, ease-out),
@@ -7956,14 +7962,30 @@ html[data-app-skin="light"] .site-icon-settings-panel {
     transform 180ms var(--ease-out, ease-out);
 }
 
-.site-grid .site-card:nth-child(1) { --card-index: 0; }
-.site-grid .site-card:nth-child(2) { --card-index: 1; }
-.site-grid .site-card:nth-child(3) { --card-index: 2; }
-.site-grid .site-card:nth-child(4) { --card-index: 3; }
-.site-grid .site-card:nth-child(5) { --card-index: 4; }
-.site-grid .site-card:nth-child(6) { --card-index: 5; }
-.site-grid .site-card:nth-child(7) { --card-index: 6; }
-.site-grid .site-card:nth-child(8) { --card-index: 7; }
+.site-grid .site-card:nth-child(1) {
+  --card-index: 0;
+}
+.site-grid .site-card:nth-child(2) {
+  --card-index: 1;
+}
+.site-grid .site-card:nth-child(3) {
+  --card-index: 2;
+}
+.site-grid .site-card:nth-child(4) {
+  --card-index: 3;
+}
+.site-grid .site-card:nth-child(5) {
+  --card-index: 4;
+}
+.site-grid .site-card:nth-child(6) {
+  --card-index: 5;
+}
+.site-grid .site-card:nth-child(7) {
+  --card-index: 6;
+}
+.site-grid .site-card:nth-child(8) {
+  --card-index: 7;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .site-grid .site-card {
@@ -7975,14 +7997,16 @@ html[data-app-skin="light"] .site-icon-settings-panel {
 /* Final liquid-glass material layer. Keep this at the end of the cascade so
    the flat product-page overrides above cannot disable backdrop blur again. */
 .app-shell {
-  --liquid-surface: linear-gradient(
+  --liquid-surface:
+    linear-gradient(
       145deg,
       rgba(255, 255, 255, 0.13),
       rgba(255, 255, 255, 0.045) 48%,
       rgba(255, 255, 255, 0.08)
     ),
     rgba(18, 18, 21, 0.54);
-  --liquid-surface-hover: linear-gradient(
+  --liquid-surface-hover:
+    linear-gradient(
       145deg,
       rgba(255, 255, 255, 0.17),
       rgba(255, 255, 255, 0.065) 48%,
@@ -7995,14 +8019,16 @@ html[data-app-skin="light"] .site-icon-settings-panel {
 }
 
 .app-shell.skin-light {
-  --liquid-surface: linear-gradient(
+  --liquid-surface:
+    linear-gradient(
       145deg,
       rgba(255, 255, 255, 0.68),
       rgba(255, 255, 255, 0.34) 52%,
       rgba(255, 255, 255, 0.48)
     ),
     rgba(255, 255, 255, 0.28);
-  --liquid-surface-hover: linear-gradient(
+  --liquid-surface-hover:
+    linear-gradient(
       145deg,
       rgba(255, 255, 255, 0.8),
       rgba(255, 255, 255, 0.46) 52%,
@@ -8032,7 +8058,8 @@ html[data-app-skin="light"] .site-icon-settings-panel {
 .app-shell .site-grid .site-card:nth-child(4n + 4):hover,
 .app-shell .site-grid .site-card:nth-child(4n + 5):hover,
 .app-shell .site-grid .site-card-featured:hover,
-.app-shell .site-grid.site-grid-editing
+.app-shell
+  .site-grid.site-grid-editing
   .site-card:hover:not(.site-card-dragging) {
   border-color: var(--liquid-border);
   background: var(--liquid-surface-hover) !important;
@@ -8394,7 +8421,8 @@ html[data-app-skin="light"] .site-icon-settings-panel {
     height: calc(var(--app-viewport-height) - 16px);
     max-height: calc(var(--app-viewport-height) - 16px);
     margin-left: max(8px, env(safe-area-inset-left));
-    padding: calc(22px + env(safe-area-inset-top)) 18px var(--mobile-bottom-safe);
+    padding: calc(22px + env(safe-area-inset-top)) 18px
+      var(--mobile-bottom-safe);
     overscroll-behavior: contain;
   }
 
@@ -8542,7 +8570,10 @@ html[data-app-skin="light"] .site-icon-settings-panel {
   }
 
   .settings-drawer {
-    width: min(520px, calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right)));
+    width: min(
+      520px,
+      calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right))
+    );
     margin-inline: auto;
   }
 }
@@ -8763,4 +8794,101 @@ html[data-app-skin="light"] .site-icon-settings-panel {
   color: var(--text-faint);
   font-size: var(--type-label);
   line-height: 1.5;
+}
+
+/* Category management uses short structural motion so opening an editor or
+   moving a row never makes the settings drawer jump. */
+.settings-drawer .category-settings-list {
+  overflow: clip;
+}
+.settings-drawer .category-create-editor,
+.settings-drawer .category-setting-item-editing .category-editor {
+  animation: category-editor-in 240ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.settings-drawer .category-setting-item {
+  transform-origin: center top;
+}
+.settings-drawer .category-setting-item-entering {
+  animation: category-row-in 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.category-drag-ghost {
+  position: fixed;
+  z-index: 90;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px;
+  border: 1px solid rgba(100, 210, 255, 0.72);
+  border-radius: 11px;
+  color: var(--text);
+  background: rgba(26, 31, 40, 0.9);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+  transform: scale(1.035) rotate(0.4deg);
+  pointer-events: none;
+  will-change: left, top;
+}
+.skin-light .category-drag-ghost {
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 18px 42px rgba(45, 55, 72, 0.2);
+}
+@keyframes category-editor-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scaleY(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+@keyframes category-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Low-performance mode keeps translucent color layers while removing every
+   composited backdrop blur in the main application and its overlays. */
+.app-shell.low-performance-mode,
+.app-shell.low-performance-mode * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.app-shell.low-performance-mode {
+  --liquid-surface: rgba(18, 18, 21, 0.82);
+  --liquid-surface-hover: rgba(28, 28, 33, 0.9);
+  --liquid-border: rgba(255, 255, 255, 0.24);
+}
+.app-shell.skin-light.low-performance-mode {
+  --liquid-surface: rgba(255, 255, 255, 0.84);
+  --liquid-surface-hover: rgba(255, 255, 255, 0.92);
+  --liquid-border: rgba(255, 255, 255, 0.92);
+}
+.app-shell.low-performance-mode .drawer-backdrop,
+.app-shell.low-performance-mode .sidebar-backdrop,
+.app-shell.low-performance-mode .site-icon-settings-scrim,
+.app-shell.low-performance-mode .import-analysis-backdrop {
+  background: rgba(3, 7, 12, 0.6);
+}
+.app-shell.skin-light.low-performance-mode .drawer-backdrop,
+.app-shell.skin-light.low-performance-mode .sidebar-backdrop,
+.app-shell.skin-light.low-performance-mode .site-icon-settings-scrim,
+.app-shell.skin-light.low-performance-mode .import-analysis-backdrop {
+  background: rgba(226, 234, 246, 0.62);
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-drawer .category-create-editor,
+  .settings-drawer .category-setting-item-editing .category-editor,
+  .settings-drawer .category-setting-item-entering {
+    animation: none;
+  }
+  .category-drag-ghost {
+    transform: none;
+  }
 }
