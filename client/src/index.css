@@ -8455,6 +8455,15 @@ html[data-app-skin="light"] .site-icon-settings-panel {
     justify-content: space-between;
   }
 
+  /* Mini cards are only 64px tall. Skipping their off-screen rendering with
+     a 210px intrinsic fallback makes WebKit repeatedly materialize and relayout
+     rows while scrolling, which reads as a flash or hitch. Render this compact
+     grid continuously; the larger mobile card layouts retain the optimization. */
+  .site-grid.grid-mini .site-card {
+    content-visibility: visible;
+    contain-intrinsic-size: none;
+  }
+
   .grid-large .site-card {
     min-height: 156px;
   }

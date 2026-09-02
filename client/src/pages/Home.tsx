@@ -1990,16 +1990,19 @@ export default function Home({
   useEffect(() => {
     const documentRoot = document.documentElement;
     const viewport = window.visualViewport;
+    let lastViewportHeight: number | undefined;
 
     const updateViewportVariables = () => {
-      const height = viewport?.height ?? window.innerHeight;
+      const height = Math.round(viewport?.height ?? window.innerHeight);
+      if (height === lastViewportHeight) return;
+      lastViewportHeight = height;
       documentRoot.style.setProperty(
         "--app-viewport-height",
-        `${Math.round(height)}px`
+        `${height}px`
       );
       documentRoot.style.setProperty(
         "--visual-viewport-height",
-        `${Math.round(height)}px`
+        `${height}px`
       );
     };
 
